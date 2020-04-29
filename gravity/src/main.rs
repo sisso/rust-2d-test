@@ -3,6 +3,8 @@ use cgmath::{prelude::*, vec2, vec3, Deg, Euler, Quaternion, Rad, Vector2, Vecto
 use ggez::conf::WindowMode;
 use ggez::event::{self, EventHandler, KeyCode, KeyMods};
 use ggez::{graphics, timer, Context, ContextBuilder, GameResult};
+use rand::prelude::StdRng;
+use rand::{thread_rng, Rng, SeedableRng};
 use specs::prelude::*;
 use specs::{World, WorldExt};
 use specs_derive::Component;
@@ -65,37 +67,59 @@ impl App {
                 })
                 .build();
 
-            world
-                .create_entity()
-                .with(Model {
-                    size: 2.0,
-                    pos: Point2::new(0.0, 0.0),
-                    color: graphics::Color::new(1.0, 0.0, 0.0, 1.0),
-                })
-                .with(OrbtialBody {
-                    mass: 20.0,
-                    pos: vec2(200.0, 300.0),
-                    vel: vec2(0.0, -40.0),
-                    force: vec2(0.0, 0.0),
-                    forces: vec![],
-                })
-                .build();
+            // let seed: u64 = 0;
+            // let rng: StdRng = SeedableRng::from_seed_u64(seed);
+            let mut rng = thread_rng();
 
-            world
-                .create_entity()
-                .with(Model {
-                    size: 2.0,
-                    pos: Point2::new(0.0, 0.0),
-                    color: graphics::Color::new(1.0, 0.0, 0.0, 1.0),
-                })
-                .with(OrbtialBody {
-                    mass: 100.0,
-                    pos: vec2(500.0, 300.0),
-                    vel: vec2(0.0, 90.0),
-                    force: vec2(0.0, 0.0),
-                    forces: vec![],
-                })
-                .build();
+            for _ in 0..100 {
+                world
+                    .create_entity()
+                    .with(Model {
+                        size: 2.0,
+                        pos: Point2::new(0.0, 0.0),
+                        color: graphics::Color::new(1.0, 0.0, 0.0, 1.0),
+                    })
+                    .with(OrbtialBody {
+                        mass: rng.gen_range(10.0, 100.0),
+                        pos: vec2(rng.gen_range(10.0, 590.0), rng.gen_range(10.0, 590.0)),
+                        vel: vec2(rng.gen_range(-50.0, 50.0), rng.gen_range(-50.0, 5.0)),
+                        force: vec2(0.0, 0.0),
+                        forces: vec![],
+                    })
+                    .build();
+            }
+
+            // world
+            //     .create_entity()
+            //     .with(Model {
+            //         size: 2.0,
+            //         pos: Point2::new(0.0, 0.0),
+            //         color: graphics::Color::new(1.0, 0.0, 0.0, 1.0),
+            //     })
+            //     .with(OrbtialBody {
+            //         mass: 20.0,
+            //         pos: vec2(200.0, 300.0),
+            //         vel: vec2(0.0, -40.0),
+            //         force: vec2(0.0, 0.0),
+            //         forces: vec![],
+            //     })
+            //     .build();
+            //
+            // world
+            //     .create_entity()
+            //     .with(Model {
+            //         size: 2.0,
+            //         pos: Point2::new(0.0, 0.0),
+            //         color: graphics::Color::new(1.0, 0.0, 0.0, 1.0),
+            //     })
+            //     .with(OrbtialBody {
+            //         mass: 100.0,
+            //         pos: vec2(500.0, 300.0),
+            //         vel: vec2(0.0, 90.0),
+            //         force: vec2(0.0, 0.0),
+            //         forces: vec![],
+            //     })
+            //     .build();
         }
 
         let game = App { world };
