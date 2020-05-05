@@ -2,4 +2,5 @@
 members = [
     "gravity",
     "heroes",
+    "utils",
 ]

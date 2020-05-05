@@ -19,7 +19,6 @@ const HEIGHT: u32 = 600;
 struct Cfg {
     update_next: bool,
     speed_reduction: f32,
-    target: Point2<f32>,
 }
 
 impl Cfg {
@@ -27,7 +26,6 @@ impl Cfg {
         Cfg {
             update_next: true,
             speed_reduction: 0.9,
-            target: Point2::new(0.0, 0.0),
         }
     }
 }
@@ -61,6 +59,12 @@ struct Mob {
 }
 
 #[derive(Clone, Debug, Component)]
+struct SteeringArrival {
+    pos: Point2<f32>,
+    distance: f32,
+}
+
+#[derive(Clone, Debug, Component)]
 struct Model {
     size: f32,
     pos: Point2<f32>,
@@ -79,6 +83,7 @@ impl App {
         world.register::<Cfg>();
         world.register::<Mob>();
         world.register::<MovingArea>();
+        world.register::<SteeringArrival>();
 
         world.insert(Cfg::new());
         world.insert(GameTime { delta_time: 0.01 });
@@ -148,6 +153,10 @@ impl App {
                 pos: Point2::new(0.0, 0.0),
                 color: Color::new(1.0, 0.0, 0.0, 1.0),
             })
+            .with(SteeringArrival {
+                pos: Point2::new(300.0, 300.0),
+                distance: 50.0,
+            })
             .build();
 
         let game = App { world };
@@ -155,37 +164,50 @@ impl App {
     }
 }
 
-struct MobMoviementSystem;
-impl<'a> System<'a> for MobMoviementSystem {
+struct MobMovementSystem;
+impl<'a> System<'a> for MobMovementSystem {
     type SystemData = (
         ReadExpect<'a, GameTime>,
         ReadExpect<'a, Cfg>,
         WriteStorage<'a, Mob>,
+        ReadStorage<'a, SteeringArrival>,
         ReadExpect<'a, MovingArea>,
     );
 
-    fn run(&mut self, (game_time, cfg, mut mobs, moving_area): Self::SystemData) {
+    fn run(&mut self, (game_time, cfg, mut mobs, steering_arrival, moving_area): Self::SystemData) {
         use specs::Join;
 
-        for (mob) in (&mut mobs).join() {
+        for (mob, arrival) in (&mut mobs, &steering_arrival).join() {
             let mob: &mut Mob = mob;
-            let delta = cfg.target - mob.pos;
-            let distance = delta.magnitude();
-            if distance < 0.1 {
-                println!("complete");
+            let arrival: &SteeringArrival = arrival;
+            let delta = arrival.pos - mob.pos;
+            let distance: f32 = delta.magnitude();
+            if !distance.is_normal() || distance < 0.1 {
+                // arrival
+                continue;
+            }
+
+            let speed = if distance > arrival.distance {
+                mob.speed
+            } else {
+                mob.speed
+            };
+
+            let step_speed = speed * game_time.delta_time;
+            if step_speed > distance {
+                // complete
+                mob.pos = arrival.pos;
             } else {
                 let dir = delta.normalize();
-                let speed = mob.speed.min(distance * cfg.speed_reduction);
-                let vel = dir * speed;
-                let change = vel * game_time.delta_time;
-                let new_pos = mob.pos + change;
+                let vel = dir * step_speed;
+                let new_pos = mob.pos + vel;
 
                 if moving_area.is_valid(new_pos) {
                     mob.pos = new_pos;
                 }
-
-                // println!("{:?} set vel {:?}", entity, movable);
             }
+
+            // println!("{:?} set vel {:?}", entity, movable);
         }
     }
 }
@@ -209,7 +231,7 @@ impl EventHandler for App {
 
         if self.world.read_resource::<Cfg>().update_next {
             let mut dispatcher = DispatcherBuilder::new()
-                .with(MobMoviementSystem, "mob_movement_system", &[])
+                .with(MobMovementSystem, "mob_movement_system", &[])
                 .with(UpdateModelPos, "update_model_pos", &["mob_movement_system"])
                 .build();
 
@@ -268,8 +290,8 @@ impl EventHandler for App {
     }
 
     fn mouse_button_up_event(&mut self, ctx: &mut Context, button: MouseButton, x: f32, y: f32) {
-        if MouseButton::Right == button {
-            self.world.write_resource::<Cfg>().target = (x, y).into();
+        for (arrival) in (&mut self.world.write_component::<SteeringArrival>()).join() {
+            arrival.pos = (x, y).into();
         }
     }
 
