@@ -11,6 +11,7 @@ use specs::prelude::*;
 use specs::{World, WorldExt};
 use specs_derive::Component;
 use std::ops::Deref;
+use utils::lerp_2;
 
 const WIDTH: u32 = 800;
 const HEIGHT: u32 = 600;
@@ -55,13 +56,15 @@ impl MovingArea {
 #[derive(Clone, Debug, Component)]
 struct Mob {
     pos: Point2<f32>,
-    speed: f32,
+    vel: Vector2<f32>,
+    max_speed: f32,
 }
 
 #[derive(Clone, Debug, Component)]
 struct SteeringArrival {
-    pos: Point2<f32>,
+    target_pos: Point2<f32>,
     distance: f32,
+    enabled: bool,
 }
 
 #[derive(Clone, Debug, Component)]
@@ -77,6 +80,8 @@ struct App {
 
 impl App {
     pub fn new(ctx: &mut Context) -> GameResult<App> {
+        let mut rng: StdRng = SeedableRng::seed_from_u64(0);
+
         // create world
         let mut world = World::new();
         world.register::<Model>();
@@ -142,45 +147,101 @@ impl App {
         //     world.insert(MovingArea { polygons });
         // }
 
-        world
-            .create_entity()
-            .with(Mob {
-                pos: Point2::new(WIDTH as f32 / 2.0, HEIGHT as f32 / 2.0),
-                speed: 200.0,
-            })
-            .with(Model {
-                size: 3.0,
-                pos: Point2::new(0.0, 0.0),
-                color: Color::new(1.0, 0.0, 0.0, 1.0),
-            })
-            .with(SteeringArrival {
-                pos: Point2::new(300.0, 300.0),
-                distance: 50.0,
-            })
-            .build();
+        let max_speed = 100.0;
+
+        for _ in 0..100 {
+            let pos = Point2::new(
+                rng.gen_range(0.0, WIDTH as f32),
+                rng.gen_range(0.0, HEIGHT as f32),
+            );
+
+            let vel = Vector2::new(
+                rng.gen_range(-max_speed, max_speed),
+                rng.gen_range(-max_speed, max_speed),
+            );
+
+            world
+                .create_entity()
+                .with(Mob {
+                    pos,
+                    vel,
+                    max_speed,
+                })
+                .with(Model {
+                    size: 3.0,
+                    pos: Point2::new(0.0, 0.0),
+                    color: Color::new(1.0, 0.0, 0.0, 1.0),
+                })
+                .with(SteeringArrival {
+                    target_pos: Point2::new(300.0, 300.0),
+                    distance: 50.0,
+                    enabled: rng.gen(),
+                })
+                .build();
+        }
 
         let game = App { world };
         Ok(game)
     }
 }
 
-struct MobMovementSystem;
-impl<'a> System<'a> for MobMovementSystem {
+struct BordersTeleportSystem;
+impl<'a> System<'a> for BordersTeleportSystem {
+    type SystemData = (WriteStorage<'a, Mob>);
+
+    fn run(&mut self, (mut mobs): Self::SystemData) {
+        use specs::Join;
+
+        for (mob) in (&mut mobs).join() {
+            if mob.pos.x > WIDTH as f32 {
+                mob.pos.x -= WIDTH as f32;
+            }
+            if mob.pos.x < 0.0 {
+                mob.pos.x += WIDTH as f32;
+            }
+            if mob.pos.y > HEIGHT as f32 {
+                mob.pos.y -= HEIGHT as f32;
+            }
+            if mob.pos.y < 0.0 {
+                mob.pos.y += HEIGHT as f32;
+            }
+        }
+    }
+}
+
+struct MoveSystem;
+impl<'a> System<'a> for MoveSystem {
+    type SystemData = (ReadExpect<'a, GameTime>, WriteStorage<'a, Mob>);
+
+    fn run(&mut self, (game_time, mut mobs): Self::SystemData) {
+        use specs::Join;
+
+        for (mob) in (&mut mobs).join() {
+            mob.pos = mob.pos + mob.vel * game_time.delta_time;
+        }
+    }
+}
+
+struct SteerArrivalSystem;
+impl<'a> System<'a> for SteerArrivalSystem {
     type SystemData = (
         ReadExpect<'a, GameTime>,
         ReadExpect<'a, Cfg>,
         WriteStorage<'a, Mob>,
         ReadStorage<'a, SteeringArrival>,
-        ReadExpect<'a, MovingArea>,
     );
 
-    fn run(&mut self, (game_time, cfg, mut mobs, steering_arrival, moving_area): Self::SystemData) {
+    fn run(&mut self, (game_time, cfg, mut mobs, steering_arrival): Self::SystemData) {
         use specs::Join;
 
         for (mob, arrival) in (&mut mobs, &steering_arrival).join() {
-            let mob: &mut Mob = mob;
             let arrival: &SteeringArrival = arrival;
-            let delta = arrival.pos - mob.pos;
+            if !arrival.enabled {
+                continue;
+            }
+
+            let mob: &mut Mob = mob;
+            let delta = arrival.target_pos - mob.pos;
             let distance: f32 = delta.magnitude();
             if !distance.is_normal() || distance < 0.1 {
                 // arrival
@@ -188,26 +249,20 @@ impl<'a> System<'a> for MobMovementSystem {
             }
 
             let speed = if distance > arrival.distance {
-                mob.speed
+                mob.max_speed
             } else {
-                mob.speed
+                lerp_2(0.0, mob.max_speed, 0.0, arrival.distance, distance)
             };
 
             let step_speed = speed * game_time.delta_time;
             if step_speed > distance {
                 // complete
-                mob.pos = arrival.pos;
+                mob.pos = arrival.target_pos;
+                mob.vel = Vector2::zero();
             } else {
                 let dir = delta.normalize();
-                let vel = dir * step_speed;
-                let new_pos = mob.pos + vel;
-
-                if moving_area.is_valid(new_pos) {
-                    mob.pos = new_pos;
-                }
+                mob.vel = dir * speed;
             }
-
-            // println!("{:?} set vel {:?}", entity, movable);
         }
     }
 }
@@ -231,8 +286,18 @@ impl EventHandler for App {
 
         if self.world.read_resource::<Cfg>().update_next {
             let mut dispatcher = DispatcherBuilder::new()
-                .with(MobMovementSystem, "mob_movement_system", &[])
-                .with(UpdateModelPos, "update_model_pos", &["mob_movement_system"])
+                .with(SteerArrivalSystem, "mob_movement_system", &[])
+                .with(MoveSystem, "move_system", &["mob_movement_system"])
+                .with(
+                    BordersTeleportSystem,
+                    "border_teleport_system",
+                    &["move_system"],
+                )
+                .with(
+                    UpdateModelPos,
+                    "update_model_pos",
+                    &["border_teleport_system"],
+                )
                 .build();
 
             dispatcher.run_now(&mut self.world);
@@ -291,7 +356,7 @@ impl EventHandler for App {
 
     fn mouse_button_up_event(&mut self, ctx: &mut Context, button: MouseButton, x: f32, y: f32) {
         for (arrival) in (&mut self.world.write_component::<SteeringArrival>()).join() {
-            arrival.pos = (x, y).into();
+            arrival.target_pos = (x, y).into();
         }
     }
 
