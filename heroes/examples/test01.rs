@@ -54,17 +54,23 @@ impl MovingArea {
 }
 
 #[derive(Clone, Debug, Component)]
-struct Mob {
+struct Vehicle {
     pos: Point2<f32>,
     vel: Vector2<f32>,
     max_speed: f32,
 }
 
 #[derive(Clone, Debug, Component)]
+struct SteeringSeparation {
+    enabled: bool,
+    distance: f32,
+}
+
+#[derive(Clone, Debug, Component)]
 struct SteeringArrival {
+    enabled: bool,
     target_pos: Point2<f32>,
     distance: f32,
-    enabled: bool,
 }
 
 #[derive(Clone, Debug, Component)]
@@ -86,9 +92,10 @@ impl App {
         let mut world = World::new();
         world.register::<Model>();
         world.register::<Cfg>();
-        world.register::<Mob>();
+        world.register::<Vehicle>();
         world.register::<MovingArea>();
         world.register::<SteeringArrival>();
+        world.register::<SteeringSeparation>();
 
         world.insert(Cfg::new());
         world.insert(GameTime { delta_time: 0.01 });
@@ -104,49 +111,6 @@ impl App {
             .unwrap()],
         });
 
-        // {
-        //     let paths: Vec<Vec<f32>> = vec![
-        //         vec![
-        //             0.0, 287.73959, 3.96875, -17.19792, 26.458333, -3.96875, -1.322916, 19.84375,
-        //             -15.875, 10.58334,
-        //         ],
-        //         vec![
-        //             30.427083, 266.57292, 10.583333, 1.32291, 6.614583, 25.13542, -3.96875,
-        //             2.64583, 31.75, 2.64583, -2.645834, -9.26041,
-        //         ],
-        //     ];
-        //
-        //     let mut min: [f32; 2] = [0.0, 0.0];
-        //     let mut max: [f32; 2] = [0.0, 0.0];
-        //     let mut polygons: Vec<Polygon> = vec![];
-        //
-        //     for path in paths {
-        //         let mut vertices: Vec<Point> = vec![];
-        //
-        //         for i in 0..(path.len() / 2) {
-        //             let x = path[i * 2];
-        //             let y = path[i * 2 + 1];
-        //
-        //             max[0] = max[0].max(x);
-        //             max[1] = max[1].max(y);
-        //             min[0] = min[0].min(x);
-        //             min[1] = min[1].min(y);
-        //
-        //             vertices.push((x as f64, y as f64).into());
-        //         }
-        //
-        //         vertices.push(vertices[0].clone());
-        //
-        //         let polygon = match Polygon::try_new(vertices.clone()) {
-        //             Ok(polygon) => polygon,
-        //             Err(e) => panic!("fail to generate a polygon {:?} from {:?}", e, vertices),
-        //         };
-        //         polygons.push(polygon);
-        //     }
-        //
-        //     world.insert(MovingArea { polygons });
-        // }
-
         let max_speed = 100.0;
 
         for _ in 0..100 {
@@ -160,22 +124,28 @@ impl App {
                 rng.gen_range(-max_speed, max_speed),
             );
 
+            let radius = rng.gen_range(1.0, 5.0);
+
             world
                 .create_entity()
-                .with(Mob {
+                .with(Vehicle {
                     pos,
                     vel,
                     max_speed,
                 })
                 .with(Model {
-                    size: 3.0,
+                    size: radius,
                     pos: Point2::new(0.0, 0.0),
                     color: Color::new(1.0, 0.0, 0.0, 1.0),
                 })
                 .with(SteeringArrival {
+                    enabled: rng.gen(),
                     target_pos: Point2::new(300.0, 300.0),
                     distance: 50.0,
+                })
+                .with(SteeringSeparation {
                     enabled: rng.gen(),
+                    distance: radius,
                 })
                 .build();
         }
@@ -187,37 +157,76 @@ impl App {
 
 struct BordersTeleportSystem;
 impl<'a> System<'a> for BordersTeleportSystem {
-    type SystemData = (WriteStorage<'a, Mob>);
+    type SystemData = (WriteStorage<'a, Vehicle>);
 
     fn run(&mut self, (mut mobs): Self::SystemData) {
         use specs::Join;
 
-        for (mob) in (&mut mobs).join() {
-            if mob.pos.x > WIDTH as f32 {
-                mob.pos.x -= WIDTH as f32;
+        for (vehicle) in (&mut mobs).join() {
+            if vehicle.pos.x > WIDTH as f32 {
+                vehicle.pos.x -= WIDTH as f32;
             }
-            if mob.pos.x < 0.0 {
-                mob.pos.x += WIDTH as f32;
+            if vehicle.pos.x < 0.0 {
+                vehicle.pos.x += WIDTH as f32;
             }
-            if mob.pos.y > HEIGHT as f32 {
-                mob.pos.y -= HEIGHT as f32;
+            if vehicle.pos.y > HEIGHT as f32 {
+                vehicle.pos.y -= HEIGHT as f32;
             }
-            if mob.pos.y < 0.0 {
-                mob.pos.y += HEIGHT as f32;
+            if vehicle.pos.y < 0.0 {
+                vehicle.pos.y += HEIGHT as f32;
             }
+        }
+    }
+}
+
+struct SteeringSeparationSystem;
+impl<'a> System<'a> for SteeringSeparationSystem {
+    type SystemData = (
+        Entities<'a>,
+        WriteStorage<'a, Vehicle>,
+        ReadStorage<'a, SteeringSeparation>,
+    );
+
+    fn run(&mut self, (entities, mut vehicles, separations): Self::SystemData) {
+        use specs::Join;
+
+        let mut changes = vec![];
+
+        for (entity_a, vehicle_a, separation_a) in (&*entities, &vehicles, &separations).join() {
+            for (entity_b, vehicle_b, separation_b) in (&*entities, &vehicles, &separations).join()
+            {
+                if entity_a == entity_b {
+                    continue;
+                }
+
+                let min_distance = separation_a.distance + separation_b.distance;
+                let vector = (vehicle_b.pos - vehicle_a.pos);
+                let distance = vector.magnitude();
+
+                if distance < min_distance {
+                    changes.push((entity_a, vector * 1.0, distance));
+                    changes.push((entity_b, vector, distance));
+                }
+            }
+        }
+
+        let vehicles = &mut vehicles;
+        for (entity, vector, distance) in changes {
+            let vehicle = vehicles.get_mut(entity).unwrap();
+            vehicle.vel = vector;
         }
     }
 }
 
 struct MoveSystem;
 impl<'a> System<'a> for MoveSystem {
-    type SystemData = (ReadExpect<'a, GameTime>, WriteStorage<'a, Mob>);
+    type SystemData = (ReadExpect<'a, GameTime>, WriteStorage<'a, Vehicle>);
 
-    fn run(&mut self, (game_time, mut mobs): Self::SystemData) {
+    fn run(&mut self, (game_time, mut vehicles): Self::SystemData) {
         use specs::Join;
 
-        for (mob) in (&mut mobs).join() {
-            mob.pos = mob.pos + mob.vel * game_time.delta_time;
+        for (vehicle) in (&mut vehicles).join() {
+            vehicle.pos = vehicle.pos + vehicle.vel * game_time.delta_time;
         }
     }
 }
@@ -226,22 +235,21 @@ struct SteerArrivalSystem;
 impl<'a> System<'a> for SteerArrivalSystem {
     type SystemData = (
         ReadExpect<'a, GameTime>,
-        ReadExpect<'a, Cfg>,
-        WriteStorage<'a, Mob>,
+        WriteStorage<'a, Vehicle>,
         ReadStorage<'a, SteeringArrival>,
     );
 
-    fn run(&mut self, (game_time, cfg, mut mobs, steering_arrival): Self::SystemData) {
+    fn run(&mut self, (game_time, mut mobs, steering_arrival): Self::SystemData) {
         use specs::Join;
 
-        for (mob, arrival) in (&mut mobs, &steering_arrival).join() {
+        for (vehicle, arrival) in (&mut mobs, &steering_arrival).join() {
             let arrival: &SteeringArrival = arrival;
             if !arrival.enabled {
                 continue;
             }
 
-            let mob: &mut Mob = mob;
-            let delta = arrival.target_pos - mob.pos;
+            let vehicle: &mut Vehicle = vehicle;
+            let delta = arrival.target_pos - vehicle.pos;
             let distance: f32 = delta.magnitude();
             if !distance.is_normal() || distance < 0.1 {
                 // arrival
@@ -249,27 +257,27 @@ impl<'a> System<'a> for SteerArrivalSystem {
             }
 
             let speed = if distance > arrival.distance {
-                mob.max_speed
+                vehicle.max_speed
             } else {
-                lerp_2(0.0, mob.max_speed, 0.0, arrival.distance, distance)
+                lerp_2(0.0, vehicle.max_speed, 0.0, arrival.distance, distance)
             };
 
             let step_speed = speed * game_time.delta_time;
             if step_speed > distance {
                 // complete
-                mob.pos = arrival.target_pos;
-                mob.vel = Vector2::zero();
+                vehicle.pos = arrival.target_pos;
+                vehicle.vel = Vector2::zero();
             } else {
                 let dir = delta.normalize();
-                mob.vel = dir * speed;
+                vehicle.vel = dir * speed;
             }
         }
     }
 }
 
-struct UpdateModelPos;
-impl<'a> System<'a> for UpdateModelPos {
-    type SystemData = (ReadStorage<'a, Mob>, WriteStorage<'a, Model>);
+struct UpdateModelPosSystem;
+impl<'a> System<'a> for UpdateModelPosSystem {
+    type SystemData = (ReadStorage<'a, Vehicle>, WriteStorage<'a, Model>);
 
     fn run(&mut self, (mobs, mut models): Self::SystemData) {
         use specs::Join;
@@ -286,18 +294,15 @@ impl EventHandler for App {
 
         if self.world.read_resource::<Cfg>().update_next {
             let mut dispatcher = DispatcherBuilder::new()
-                .with(SteerArrivalSystem, "mob_movement_system", &[])
-                .with(MoveSystem, "move_system", &["mob_movement_system"])
+                .with(SteerArrivalSystem, "steering_arrival", &[])
+                .with(SteeringSeparationSystem, "steering_separation", &[])
                 .with(
-                    BordersTeleportSystem,
-                    "border_teleport_system",
-                    &["move_system"],
+                    MoveSystem,
+                    "move",
+                    &["steering_arrival", "steering_separation"],
                 )
-                .with(
-                    UpdateModelPos,
-                    "update_model_pos",
-                    &["border_teleport_system"],
-                )
+                .with(BordersTeleportSystem, "border_teleport", &["move"])
+                .with(UpdateModelPosSystem, "update_model", &["border_teleport"])
                 .build();
 
             dispatcher.run_now(&mut self.world);
@@ -348,7 +353,11 @@ impl EventHandler for App {
         }
 
         let cfg = &self.world.read_resource::<Cfg>();
-        let text = graphics::Text::new(format!("{:?}", cfg.deref()));
+        let text = graphics::Text::new(format!(
+            "ftps: {}, {:?}",
+            ggez::timer::fps(ctx) as i32,
+            cfg.deref()
+        ));
         graphics::draw(ctx, &text, (cgmath::Point2::new(0.0, 0.0), graphics::WHITE))?;
 
         graphics::present(ctx)
