@@ -13,8 +13,8 @@ use specs_derive::Component;
 use std::ops::Deref;
 use utils::lerp_2;
 
-const WIDTH: u32 = 800;
-const HEIGHT: u32 = 600;
+const WIDTH: f32 = 1600.0;
+const HEIGHT: f32 = 1200.0;
 
 #[derive(Clone, Debug, Component)]
 struct Cfg {
@@ -57,6 +57,8 @@ impl MovingArea {
 struct Vehicle {
     pos: Point2<f32>,
     vel: Vector2<f32>,
+    max_acc: f32,
+    steering_vel: Vec<Vector2<f32>>,
     max_speed: f32,
 }
 
@@ -64,6 +66,14 @@ struct Vehicle {
 struct SteeringSeparation {
     enabled: bool,
     distance: f32,
+    weight: f32,
+}
+
+#[derive(Clone, Debug, Component)]
+struct SteeringVelocity {
+    enabled: bool,
+    vel: Vector2<f32>,
+    weight: f32,
 }
 
 #[derive(Clone, Debug, Component)]
@@ -71,6 +81,7 @@ struct SteeringArrival {
     enabled: bool,
     target_pos: Point2<f32>,
     distance: f32,
+    weight: f32,
 }
 
 #[derive(Clone, Debug, Component)]
@@ -96,6 +107,7 @@ impl App {
         world.register::<MovingArea>();
         world.register::<SteeringArrival>();
         world.register::<SteeringSeparation>();
+        world.register::<SteeringVelocity>();
 
         world.insert(Cfg::new());
         world.insert(GameTime { delta_time: 0.01 });
@@ -111,9 +123,11 @@ impl App {
             .unwrap()],
         });
 
-        let max_speed = 100.0;
+        let max_acc = 100.0;
+        let max_speed = 50.0;
+        let radius_mut = 2.0;
 
-        for _ in 0..100 {
+        for _ in 0..500 {
             let pos = Point2::new(
                 rng.gen_range(0.0, WIDTH as f32),
                 rng.gen_range(0.0, HEIGHT as f32),
@@ -124,28 +138,50 @@ impl App {
                 rng.gen_range(-max_speed, max_speed),
             );
 
-            let radius = rng.gen_range(1.0, 5.0);
+            let radius = match rng.gen_range(0, 10) {
+                0 => 5.0,
+                _ => 3.0,
+            };
+            let follow: bool = match rng.gen_range(0, 5) {
+                0 => true,
+                _ => false,
+            };
+
+            let color = if follow {
+                Color::new(1.0, 1.0, 0.0, 1.0)
+            } else {
+                Color::new(1.0, 0.0, 0.0, 1.0)
+            };
 
             world
                 .create_entity()
                 .with(Vehicle {
                     pos,
-                    vel,
+                    vel: Vector2::zero(),
+                    max_acc: max_acc,
+                    steering_vel: vec![],
                     max_speed,
                 })
                 .with(Model {
                     size: radius,
                     pos: Point2::new(0.0, 0.0),
-                    color: Color::new(1.0, 0.0, 0.0, 1.0),
+                    color,
                 })
                 .with(SteeringArrival {
-                    enabled: rng.gen(),
+                    enabled: follow,
                     target_pos: Point2::new(300.0, 300.0),
                     distance: 50.0,
+                    weight: 1.0,
                 })
                 .with(SteeringSeparation {
-                    enabled: rng.gen(),
-                    distance: radius,
+                    enabled: true,
+                    distance: radius * radius_mut,
+                    weight: 2.0,
+                })
+                .with(SteeringVelocity {
+                    enabled: !follow,
+                    vel: vel,
+                    weight: 1.0,
                 })
                 .build();
         }
@@ -199,21 +235,51 @@ impl<'a> System<'a> for SteeringSeparationSystem {
                     continue;
                 }
 
+                if !separation_a.enabled || !separation_b.enabled {
+                    continue;
+                }
+
                 let min_distance = separation_a.distance + separation_b.distance;
                 let vector = (vehicle_b.pos - vehicle_a.pos);
                 let distance = vector.magnitude();
 
                 if distance < min_distance {
-                    changes.push((entity_a, vector * 1.0, distance));
-                    changes.push((entity_b, vector, distance));
+                    changes.push((
+                        entity_a,
+                        vector,
+                        separation_a.weight,
+                        min_distance,
+                        distance,
+                    ));
+                    // changes.push((entity_b, vector, min_distance, distance));
                 }
             }
         }
 
         let vehicles = &mut vehicles;
-        for (entity, vector, distance) in changes {
+        for (entity, vector, weight, min_distance, distance) in changes {
             let vehicle = vehicles.get_mut(entity).unwrap();
-            vehicle.vel = vector;
+            let vel = lerp_2(vehicle.max_speed * weight, 0.0, 0.0, min_distance, distance);
+            let vector = vector.normalize() * -1.0;
+            vehicle.steering_vel.push(vector * vel);
+        }
+    }
+}
+
+struct SteeringVelocitySystem;
+impl<'a> System<'a> for SteeringVelocitySystem {
+    type SystemData = (ReadStorage<'a, SteeringVelocity>, WriteStorage<'a, Vehicle>);
+
+    fn run(&mut self, (velocity, mut vehicles): Self::SystemData) {
+        use specs::Join;
+
+        for (velocity, vehicle) in (&velocity, &mut vehicles).join() {
+            if !velocity.enabled {
+                continue;
+            }
+
+            let vehicle: &mut Vehicle = vehicle;
+            vehicle.steering_vel.push(velocity.vel * velocity.weight);
         }
     }
 }
@@ -226,6 +292,15 @@ impl<'a> System<'a> for MoveSystem {
         use specs::Join;
 
         for (vehicle) in (&mut vehicles).join() {
+            let vehicle: &mut Vehicle = vehicle;
+            let velocities = std::mem::replace(&mut vehicle.steering_vel, vec![]);
+            let desired_velocity = velocities.into_iter().fold(Vector2::zero(), |a, b| a + b);
+            let mut delta_velocity = desired_velocity - vehicle.vel;
+            let step_max_acc = vehicle.max_acc * game_time.delta_time;
+            if delta_velocity.magnitude() > step_max_acc {
+                delta_velocity = delta_velocity.normalize() * step_max_acc;
+            }
+            vehicle.vel = vehicle.vel + delta_velocity;
             vehicle.pos = vehicle.pos + vehicle.vel * game_time.delta_time;
         }
     }
@@ -265,11 +340,10 @@ impl<'a> System<'a> for SteerArrivalSystem {
             let step_speed = speed * game_time.delta_time;
             if step_speed > distance {
                 // complete
-                vehicle.pos = arrival.target_pos;
-                vehicle.vel = Vector2::zero();
+                // vehicle.pos = arrival.target_pos;
             } else {
                 let dir = delta.normalize();
-                vehicle.vel = dir * speed;
+                vehicle.steering_vel.push(dir * speed * arrival.weight);
             }
         }
     }
@@ -296,10 +370,15 @@ impl EventHandler for App {
             let mut dispatcher = DispatcherBuilder::new()
                 .with(SteerArrivalSystem, "steering_arrival", &[])
                 .with(SteeringSeparationSystem, "steering_separation", &[])
+                .with(SteeringVelocitySystem, "steering_velocity", &[])
                 .with(
                     MoveSystem,
                     "move",
-                    &["steering_arrival", "steering_separation"],
+                    &[
+                        "steering_arrival",
+                        "steering_separation",
+                        "steering_velocity",
+                    ],
                 )
                 .with(BordersTeleportSystem, "border_teleport", &["move"])
                 .with(UpdateModelPosSystem, "update_model", &["border_teleport"])
@@ -320,7 +399,8 @@ impl EventHandler for App {
                 // println!("{:?} drawing {:?} at {:?}", e, model, mov);
                 let circle = graphics::Mesh::new_circle(
                     ctx,
-                    graphics::DrawMode::fill(),
+                    // graphics::DrawMode::fill(),
+                    graphics::DrawMode::stroke(1.0),
                     model.pos,
                     model.size,
                     0.1,
@@ -383,7 +463,8 @@ impl EventHandler for App {
 fn main() -> GameResult<()> {
     // Make a Context.
     let mut window_mode: WindowMode = Default::default();
-    window_mode.resizable = true;
+    window_mode.width = WIDTH;
+    window_mode.height = HEIGHT;
 
     let (mut ctx, mut event_loop) = ContextBuilder::new("my_game", "Cool Game Author")
         .window_mode(window_mode)
