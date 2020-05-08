@@ -20,3 +20,7 @@ shred = { version = "0.10.*", default-features = false }
 shred-derive = "0.6.*"
 myelin-geometry = "2.4.1"
 utils = { version = "*", path = "../utils" }
+
+# obj-rs = "0.6.0"
+obj-rs = { version = "*", path = "/home/sisso/workspace/others/obj-rs-2" }
+itertools = "*"

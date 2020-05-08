@@ -1,10 +1,12 @@
 use cgmath::Point2;
-use cgmath::{prelude::*, vec2, vec3, Deg, Euler, Quaternion, Rad, Vector2, VectorSpace};
+use cgmath::{
+    prelude::*, vec2, vec3, Deg, Euler, InnerSpace, Quaternion, Rad, Vector2, VectorSpace,
+};
 use ggez::conf::WindowMode;
 use ggez::event::{self, Button, EventHandler, KeyCode, KeyMods, MouseButton};
 use ggez::graphics::Color;
 use ggez::{graphics, timer, Context, ContextBuilder, GameResult};
-use myelin_geometry::*;
+use myelin_geometry::{Point as GPoint, Polygon};
 use rand::prelude::StdRng;
 use rand::{thread_rng, Rng, SeedableRng};
 use specs::prelude::*;
@@ -41,7 +43,7 @@ struct MovingArea {
     polygons: Vec<Polygon>,
 }
 
-fn to_point(p2: Point2<f32>) -> Point {
+fn to_point(p2: Point2<f32>) -> GPoint {
     (p2.x as f64, p2.y as f64).into()
 }
 
