@@ -7,20 +7,26 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ggez = "0.5"
+# math
 cgmath = { version = "0.17", features = ["mint"]}
 mint = "0.5"
+myelin-geometry = "2.4.1"
+geo="0.9.*"
 
+# tools
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 rand = "0.7"
+utils = { version = "*", path = "../utils" }
+itertools = "*"
+
+# spec
 specs = { version = "0.16.*", features = ["serde"] }
 specs-derive = "0.4.0"
 shred = { version = "0.10.*", default-features = false }
 shred-derive = "0.6.*"
-myelin-geometry = "2.4.1"
-utils = { version = "*", path = "../utils" }
 
+# 3d
 # obj-rs = "0.6.0"
+ggez = "0.5"
 obj-rs = { version = "*", path = "/home/sisso/workspace/others/obj-rs-2" }
-itertools = "*"

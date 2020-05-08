@@ -15,6 +15,8 @@ use specs_derive::Component;
 use std::ops::Deref;
 use utils::lerp_2;
 
+// TODO: add parallelism
+
 const WIDTH: f32 = 1600.0;
 const HEIGHT: f32 = 1200.0;
 
@@ -22,6 +24,8 @@ const HEIGHT: f32 = 1200.0;
 struct Cfg {
     update_next: bool,
     speed_reduction: f32,
+    draw_walls: bool,
+    mobs: usize,
 }
 
 impl Cfg {
@@ -29,6 +33,8 @@ impl Cfg {
         Cfg {
             update_next: true,
             speed_reduction: 0.9,
+            draw_walls: true,
+            mobs: 100,
         }
     }
 }
@@ -93,6 +99,14 @@ struct Model {
     color: graphics::Color,
 }
 
+#[derive(Clone, Debug, Component)]
+struct Wall {
+    point_a: Point2<f32>,
+    point_b: Point2<f32>,
+    force: Vector2<f32>,
+    min_distance: f32,
+}
+
 struct App {
     world: World,
 }
@@ -110,26 +124,51 @@ impl App {
         world.register::<SteeringArrival>();
         world.register::<SteeringSeparation>();
         world.register::<SteeringVelocity>();
+        world.register::<Wall>();
 
-        world.insert(Cfg::new());
+        let cfg = Cfg::new();
+
         world.insert(GameTime { delta_time: 0.01 });
 
-        let border = 160.0;
-        world.insert(MovingArea {
-            polygons: vec![Polygon::try_new(vec![
+        {
+            let border = 160.0;
+            let points = vec![
                 (border, border).into(),
                 (WIDTH as f64 - border, border).into(),
                 (WIDTH as f64 - border, HEIGHT as f64 - border).into(),
                 (border, HEIGHT as f64 - border).into(),
-            ])
-            .unwrap()],
-        });
+            ];
+
+            world.insert(MovingArea {
+                polygons: vec![Polygon::try_new(points.clone()).unwrap()],
+            });
+
+            for (p0, p1, f, d) in vec![
+                (points[0], points[1], Vector2::new(0.0, 10.0), 20.0),
+                (points[1], points[2], Vector2::new(-10.0, 0.0), 20.0),
+                (points[2], points[3], Vector2::new(0.0, -10.0), 20.0),
+                (points[3], points[0], Vector2::new(1.0, 10.0), 20.0),
+            ] {
+                let p0 = Point2::new(p0.x as f32, p0.y as f32);
+                let p1 = Point2::new(p1.x as f32, p1.y as f32);
+
+                world
+                    .create_entity()
+                    .with(Wall {
+                        point_a: p0,
+                        point_b: p1,
+                        force: f,
+                        min_distance: d,
+                    })
+                    .build();
+            }
+        }
 
         let max_acc = 100.0;
         let max_speed = 50.0;
         let radius_mut = 2.0;
 
-        for _ in 0..500 {
+        for _ in 0..cfg.mobs {
             let pos = Point2::new(
                 rng.gen_range(0.0, WIDTH as f32),
                 rng.gen_range(0.0, HEIGHT as f32),
@@ -187,6 +226,8 @@ impl App {
                 })
                 .build();
         }
+
+        world.insert(cfg);
 
         let game = App { world };
         Ok(game)
@@ -282,6 +323,19 @@ impl<'a> System<'a> for SteeringVelocitySystem {
 
             let vehicle: &mut Vehicle = vehicle;
             vehicle.steering_vel.push(velocity.vel * velocity.weight);
+        }
+    }
+}
+
+struct SteeringWallsSystem;
+impl<'a> System<'a> for SteeringWallsSystem {
+    type SystemData = (WriteStorage<'a, Vehicle>, ReadStorage<'a, Wall>);
+
+    fn run(&mut self, (mut vehicles, walls): Self::SystemData) {
+        use specs::Join;
+
+        for (vehicle) in (&mut vehicles).join() {
+            for (wall) in (&walls).join() {}
         }
     }
 }
@@ -394,6 +448,9 @@ impl EventHandler for App {
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
         graphics::clear(ctx, graphics::BLACK);
 
+        let cfg = &self.world.read_resource::<Cfg>();
+        let color_wall = Color::new(0.0, 1.0, 0.5, 1.0);
+
         {
             let models = &self.world.read_storage::<Model>();
 
@@ -409,6 +466,15 @@ impl EventHandler for App {
                     model.color,
                 )?;
                 graphics::draw(ctx, &circle, graphics::DrawParam::default())?;
+            }
+        }
+
+        if cfg.draw_walls {
+            for wall in (&self.world.read_storage::<Wall>()).join() {
+                let mut mb = graphics::MeshBuilder::new();
+                mb.line(&[wall.point_a, wall.point_b], wall.min_distance, color_wall);
+                let mesh = mb.build(ctx)?;
+                graphics::draw(ctx, &mesh, graphics::DrawParam::default())?;
             }
         }
 

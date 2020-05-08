@@ -1,4 +1,3 @@
-use cgmath::Point2;
 use cgmath::{prelude::*, vec2, vec3, Deg, Euler, Quaternion, Rad, Vector2, VectorSpace};
 use ggez::conf::WindowMode;
 use ggez::event::{self, EventHandler, KeyCode, KeyMods};
@@ -15,7 +14,7 @@ const HEIGHT: f32 = 1200.0;
 
 struct App {
     obj: Obj,
-    pos: Point2<f32>,
+    pos: cgmath::Point2<f32>,
     scale: f32,
     disply_points: bool,
 }
@@ -28,7 +27,7 @@ impl App {
 
         let game = App {
             obj,
-            pos: Point2::new(65.0, 32.0),
+            pos: cgmath::Point2::new(65.0, 32.0),
             scale: 14.0,
             disply_points: false,
         };
@@ -44,7 +43,7 @@ impl EventHandler for App {
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
         graphics::clear(ctx, graphics::BLACK);
 
-        fn convert(coords: [f32; 3]) -> Point2<f32> {
+        fn convert(coords: [f32; 3]) -> cgmath::Point2<f32> {
             (coords[0], coords[2]).into()
         }
 
