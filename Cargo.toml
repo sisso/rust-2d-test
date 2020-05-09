@@ -1,6 +1,6 @@
 [workspace]
 members = [
     "gravity",
-    "heroes",
+    "steerning",
     "utils",
 ]
