@@ -1,7 +1,24 @@
-use cgmath::{assert_relative_eq, prelude::*, InnerSpace, Point2, Vector2, VectorSpace};
+use cgmath::{
+    assert_relative_eq, prelude::*, Euler, InnerSpace, Point2, Quaternion, Rad, Vector2, Vector3,
+    VectorSpace,
+};
 
 pub type P2 = Point2<f32>;
 pub type V2 = Vector2<f32>;
+
+pub fn rotate_vector(dir: V2, point: V2) -> V2 {
+    let angle = dir.y.atan2(dir.x);
+
+    let qt = Quaternion::from(Euler {
+        x: Rad(0.0),
+        y: Rad(0.0),
+        z: Rad(angle),
+    });
+
+    let pointv3 = Vector3::new(point.x, point.y, 0.0);
+    let rotated = qt * pointv3;
+    Vector2::new(rotated.x, rotated.y)
+}
 
 /// compute a vector that go from the point to the segment
 pub fn compute_vector_from_point_to_segment(pos: P2, vec: V2, point: P2) -> Option<V2> {

@@ -114,6 +114,49 @@ struct SteeringFormationMember {
     index: usize,
 }
 
+#[derive(Clone, Debug)]
+struct Formation {
+    pos: P2,
+    next: V2,
+}
+
+// #[derive(Clone, Debug)]
+// enum FormationType {
+//     Circle,
+//     Bar,
+//     Line,
+//     Column
+// }
+
+impl Formation {
+    // TODO: formations need to be persistent between interaction to remove flackness
+    pub fn new(leader_pos: P2, leader_vel: V2, target_pos: P2, total_members: usize) -> Self {
+        let mut right = Vector2::new(0.0, 15.0);
+
+        // let delta_to_target = target_pos - leader_pos;
+        // if delta_to_target.magnitude() > 1.0 {
+        //     let dir = delta_to_target.normalize();
+        //     right = rotate_vector(dir, right);
+        // }
+
+        let leader_speed = leader_vel.magnitude();
+        if leader_speed > 30.0 {
+            let dir = leader_vel / leader_speed;
+            right = rotate_vector(dir, right);
+        }
+
+        Formation {
+            pos: leader_pos + leader_vel,
+            next: right,
+        }
+    }
+
+    pub fn get_pos(&self, index: usize) -> P2 {
+        let mult = if index % 2 == 0 { 1.0 } else { -1.0 };
+        self.pos + self.next * ((index / 2) as f32) * mult
+    }
+}
+
 #[derive(Clone, Debug, Component)]
 struct Model {
     size: f32,
@@ -497,24 +540,26 @@ impl<'a> System<'a> for SteeringFormationSystem {
         ReadStorage<'a, SteeringFormationMember>,
     );
 
-    fn run(&mut self, (entities, vehicles, mut arrivals, formation): Self::SystemData) {
+    fn run(&mut self, (entities, vehicles, mut arrivals, formations): Self::SystemData) {
         use specs::Join;
 
-        let mut leader_pos: Option<P2> = None;
+        let mut leader: Option<(P2, V2, P2)> = None;
         let mut followers = BitSet::new();
+        let mut total_followers = 0;
 
-        for (e, v, f) in (&entities, &vehicles, &formation).join() {
+        for (e, v, f, a) in (&entities, &vehicles, &formations, &arrivals).join() {
             if f.index == 0 {
-                let predict_pos = v.pos + v.vel;
-                leader_pos = Some(predict_pos);
+                leader = Some((v.pos, v.vel, a.target_pos));
             } else {
                 followers.add(e.id());
+                total_followers += 1;
             }
         }
 
-        let pos = leader_pos.unwrap();
-        for (e, a, f) in (followers, &mut arrivals, &formation).join() {
-            a.target_pos = pos + Vector2::new(1.0, 0.0) * (f.index as f32 * 10.0);
+        let (leader_pos, leader_vel, leader_target_pos) = leader.unwrap();
+        let formation = Formation::new(leader_pos, leader_vel, leader_target_pos, total_followers);
+        for (e, a, f) in (followers, &mut arrivals, &formations).join() {
+            a.target_pos = formation.get_pos(f.index);
         }
     }
 }
