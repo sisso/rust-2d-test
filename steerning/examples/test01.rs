@@ -120,12 +120,12 @@ struct Model {
 struct Wall {
     pos: P2,
     vec: V2,
-    force: f32,
+    force: V2,
     min_distance: f32,
 }
 
 impl Wall {
-    pub fn new_from_points(p0: P2, p1: P2, min_distance: f32, force: f32) -> Self {
+    pub fn new_from_points(p0: P2, p1: P2, min_distance: f32, force: V2) -> Self {
         let vec = p1.to_vec() - p0.to_vec();
         Wall {
             pos: p0,
@@ -174,13 +174,33 @@ impl App {
             });
 
             let wall_width = 15.0;
-            let wall_force = 100.0;
+            let wall_force = 200.0;
 
             for (p0, p1, distance, force) in vec![
-                (points[0], points[1], wall_width, wall_force),
-                (points[1], points[2], wall_width, wall_force),
-                (points[2], points[3], wall_width, wall_force),
-                (points[3], points[0], wall_width, wall_force),
+                (
+                    points[0],
+                    points[1],
+                    wall_width,
+                    Vector2::new(0.0, 1.0) * wall_force,
+                ),
+                (
+                    points[1],
+                    points[2],
+                    wall_width,
+                    Vector2::new(-1.0, 0.0) * wall_force,
+                ),
+                (
+                    points[2],
+                    points[3],
+                    wall_width,
+                    Vector2::new(0.0, -1.0) * wall_force,
+                ),
+                (
+                    points[3],
+                    points[0],
+                    wall_width,
+                    Vector2::new(1.0, 0.0) * wall_force,
+                ),
             ] {
                 let p0 = Point2::new(p0.x as f32, p0.y as f32);
                 let p1 = Point2::new(p1.x as f32, p1.y as f32);
@@ -370,8 +390,8 @@ impl<'a> System<'a> for SteeringWallsSystem {
                     let distance = vector.magnitude();
                     if distance < wall.min_distance {
                         // let dir = vector.normalize() * -1.0;
-                        let force = lerp_2(0.0, wall.force, wall.min_distance, 0.0, distance);
-                        let desired_vel = vector.normalize() * -1.0 * force * force;
+                        let force_intensity = lerp_2(0.0, 1.0, wall.min_distance, 0.0, distance);
+                        let desired_vel = wall.force * force_intensity;
 
                         // println!(
                         //     "wall collision pos {:?} vec {:?} dir {:?} distance {:?}",
