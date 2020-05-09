@@ -1,0 +1,13 @@
+[package]
+name = "image-showcase"
+version = "0.1.0"
+authors = ["sisso <sisso@sisso.com.br>"]
+edition = "2018"
+
+[profile.dev]
+opt-level = 1
+
+[dependencies]
+ggez = "0.5"
+cgmath = { version = "0.17", features = ["mint"]}
+mint = "0.5"
