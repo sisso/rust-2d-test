@@ -27,7 +27,7 @@ struct Cfg {
     update_next: bool,
     speed_reduction: f32,
     draw_walls: bool,
-    mobs: usize,
+    vehicles: usize,
 }
 
 impl Cfg {
@@ -36,7 +36,7 @@ impl Cfg {
             update_next: true,
             speed_reduction: 0.9,
             draw_walls: true,
-            mobs: 100,
+            vehicles: 100,
         }
     }
 }
@@ -110,6 +110,11 @@ struct SteeringArrival {
 }
 
 #[derive(Clone, Debug, Component)]
+struct SteeringFormationMember {
+    index: usize,
+}
+
+#[derive(Clone, Debug, Component)]
 struct Model {
     size: f32,
     pos: P2,
@@ -154,6 +159,7 @@ impl App {
         world.register::<SteeringSeparation>();
         world.register::<SteeringVelocity>();
         world.register::<Wall>();
+        world.register::<SteeringFormationMember>();
 
         let cfg = Cfg::new();
 
@@ -216,7 +222,9 @@ impl App {
         let max_speed = 50.0;
         let radius_mut = 2.0;
 
-        for _ in 0..cfg.mobs {
+        let mut formation_index = 0;
+
+        for _ in 0..cfg.vehicles {
             let pos = Point2::new(
                 rng.gen_range(0.0, WIDTH as f32),
                 rng.gen_range(0.0, HEIGHT as f32),
@@ -242,7 +250,7 @@ impl App {
                 Color::new(1.0, 0.0, 0.0, 1.0)
             };
 
-            world
+            let mut builder = world
                 .create_entity()
                 .with(Vehicle {
                     pos,
@@ -271,8 +279,17 @@ impl App {
                     enabled: !follow,
                     vel: vel,
                     weight: 1.0,
-                })
-                .build();
+                });
+
+            if follow {
+                builder = builder.with(SteeringFormationMember {
+                    index: formation_index,
+                });
+
+                formation_index += 1;
+            }
+
+            builder.build();
         }
 
         world.insert(cfg);
@@ -471,6 +488,37 @@ impl<'a> System<'a> for SteerArrivalSystem {
     }
 }
 
+struct SteeringFormationSystem;
+impl<'a> System<'a> for SteeringFormationSystem {
+    type SystemData = (
+        Entities<'a>,
+        ReadStorage<'a, Vehicle>,
+        WriteStorage<'a, SteeringArrival>,
+        ReadStorage<'a, SteeringFormationMember>,
+    );
+
+    fn run(&mut self, (entities, vehicles, mut arrivals, formation): Self::SystemData) {
+        use specs::Join;
+
+        let mut leader_pos: Option<P2> = None;
+        let mut followers = BitSet::new();
+
+        for (e, v, f) in (&entities, &vehicles, &formation).join() {
+            if f.index == 0 {
+                let predict_pos = v.pos + v.vel;
+                leader_pos = Some(predict_pos);
+            } else {
+                followers.add(e.id());
+            }
+        }
+
+        let pos = leader_pos.unwrap();
+        for (e, a, f) in (followers, &mut arrivals, &formation).join() {
+            a.target_pos = pos + Vector2::new(1.0, 0.0) * (f.index as f32 * 10.0);
+        }
+    }
+}
+
 struct UpdateModelPosSystem;
 impl<'a> System<'a> for UpdateModelPosSystem {
     type SystemData = (ReadStorage<'a, Vehicle>, WriteStorage<'a, Model>);
@@ -518,6 +566,7 @@ impl EventHandler for App {
                 .with(SteeringSeparationSystem, "steering_separation", &[])
                 .with(SteeringVelocitySystem, "steering_velocity", &[])
                 .with(SteeringWallsSystem, "steering_walls", &[])
+                .with(SteeringFormationSystem, "steering_formation", &[])
                 .with(
                     MoveSystem,
                     "move",
@@ -526,6 +575,7 @@ impl EventHandler for App {
                         "steering_separation",
                         "steering_velocity",
                         "steering_walls",
+                        "steering_formation",
                     ],
                 )
                 .with(BordersTeleportSystem, "border_teleport", &["move"])
@@ -598,7 +648,13 @@ impl EventHandler for App {
     }
 
     fn mouse_button_up_event(&mut self, ctx: &mut Context, button: MouseButton, x: f32, y: f32) {
-        for (arrival) in (&mut self.world.write_component::<SteeringArrival>()).join() {
+        let mut arrival = self.world.write_component::<SteeringArrival>();
+        let formation = self.world.read_component::<SteeringFormationMember>();
+        for (formation, arrival) in (&formation, &mut arrival).join() {
+            if formation.index != 0 {
+                continue;
+            }
+
             arrival.target_pos = (x, y).into();
         }
     }
