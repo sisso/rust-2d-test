@@ -8,17 +8,20 @@ use ggez::graphics::Color;
 use ggez::{graphics, timer, Context, ContextBuilder, GameResult};
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
-use std::borrow::Borrow;
 
 const WIDTH: f32 = 800.0;
 const HEIGHT: f32 = 600.0;
 
 type V2 = Vector2<f32>;
+type P2 = Point2<f32>;
 
 #[derive(Debug, Clone)]
 struct Wall {
-    p0: V2,
-    p1: V2,
+    /// position of the wall
+    pos: P2,
+    /// vector that represent wall direction and size
+    vec: V2,
+    /// min distance until get affected by the wall
     min_distance: f32,
 }
 
@@ -36,8 +39,8 @@ impl App {
         {
             for i in 0..10 {
                 let wall = Wall {
-                    p0: vec2(rng.gen_range(0.0, WIDTH), rng.gen_range(0.0, HEIGHT)),
-                    p1: vec2(rng.gen_range(0.0, WIDTH), rng.gen_range(0.0, HEIGHT)),
+                    pos: Point2::new(rng.gen_range(0.0, WIDTH), rng.gen_range(0.0, HEIGHT)),
+                    vec: vec2(rng.gen_range(0.0, WIDTH), rng.gen_range(0.0, HEIGHT)),
                     min_distance: 50.0,
                 };
 
@@ -86,7 +89,13 @@ impl EventHandler for App {
         let point_color = graphics::WHITE;
 
         for wall in &self.walls {
-            draw_line(ctx, wall.p0, wall.p1, wall_color, 1.0);
+            draw_line(
+                ctx,
+                wall.pos.to_vec(),
+                wall.vec + wall.pos.to_vec(),
+                wall_color,
+                1.0,
+            );
         }
 
         {
@@ -105,7 +114,7 @@ impl EventHandler for App {
         {
             for wall in &self.walls {
                 if let Some(vec) =
-                    steerning::compute_vector_from_point_to_segment(wall.p0, wall.p1, self.point)
+                    steerning::compute_vector_from_point_to_segment(wall.pos, wall.vec, self.point)
                 {
                     let color = if vec.magnitude() > wall.min_distance {
                         proj_miss_color

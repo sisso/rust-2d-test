@@ -5,8 +5,8 @@ use geo::{Line, Point, Polygon};
 
 /// compute a vector that go from point to segment
 pub fn compute_vector_from_point_to_segment(
-    segment_0: Vector2<f32>,
-    segment_1: Vector2<f32>,
+    pos: Point<f32>,
+    vec: Vector2<f32>,
     point: Vector2<f32>,
 ) -> Option<Vector2<f32>> {
     let proj = line_segment_project_percent(segment_0, segment_1, point);
