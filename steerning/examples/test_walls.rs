@@ -2,6 +2,7 @@ extern crate steerning;
 use steerning::*;
 
 use cgmath::{prelude::*, vec2, EuclideanSpace, Point2, Vector2, VectorSpace};
+use geo::Point;
 use ggez::conf::WindowMode;
 use ggez::event::{self, EventHandler, KeyCode, KeyMods, MouseButton};
 use ggez::graphics::Color;
@@ -11,9 +12,6 @@ use rand::{Rng, SeedableRng};
 
 const WIDTH: f32 = 800.0;
 const HEIGHT: f32 = 600.0;
-
-type V2 = Vector2<f32>;
-type P2 = Point2<f32>;
 
 #[derive(Debug, Clone)]
 struct Wall {
@@ -27,7 +25,7 @@ struct Wall {
 
 #[derive(Debug)]
 struct App {
-    point: V2,
+    point: P2,
     walls: Vec<Wall>,
 }
 
@@ -49,26 +47,21 @@ impl App {
         }
         {
             // walls = vec![Wall {
-            //     p0: vec2(100.0, 300.0),
-            //     p1: vec2(600.0, 300.0),
-            //     min_distance: 0.0,
-            // }]
+            //     pos: Point2::new(100.0, 300.0),
+            //     vec: Vector2::new(500.0, 0.0),
+            //     min_distance: 50.0,
+            // }];
         }
 
         Ok(App {
-            point: vec2(300.0, 200.0),
+            point: Point2::new(300.0, 200.0),
             walls: walls,
         })
     }
 }
 
-fn draw_line(ctx: &mut Context, p0: V2, p1: V2, color: Color, width: f32) -> GameResult<()> {
-    let mesh = graphics::Mesh::new_line(
-        ctx,
-        &[Point2::from_vec(p0), Point2::from_vec(p1)],
-        width,
-        color,
-    )?;
+fn draw_line(ctx: &mut Context, p0: P2, p1: P2, color: Color, width: f32) -> GameResult<()> {
+    let mesh = graphics::Mesh::new_line(ctx, &[p0, p1], width, color)?;
 
     graphics::draw(ctx, &mesh, graphics::DrawParam::default())
 }
@@ -91,8 +84,8 @@ impl EventHandler for App {
         for wall in &self.walls {
             draw_line(
                 ctx,
-                wall.pos.to_vec(),
-                wall.vec + wall.pos.to_vec(),
+                wall.pos,
+                Point2::from_vec(wall.vec + wall.pos.to_vec()),
                 wall_color,
                 1.0,
             );
@@ -102,7 +95,7 @@ impl EventHandler for App {
             let mesh = graphics::Mesh::new_circle(
                 ctx,
                 graphics::DrawMode::fill(),
-                Point2::from_vec(self.point),
+                self.point,
                 5.0,
                 1.0,
                 point_color,
@@ -142,12 +135,12 @@ impl EventHandler for App {
         x: f32,
         y: f32,
     ) {
-        self.point = vec2(x, y);
+        self.point = Point2::new(x, y);
     }
 
     fn mouse_motion_event(&mut self, ctx: &mut Context, x: f32, y: f32, _dx: f32, _dy: f32) {
         if ggez::input::mouse::button_pressed(ctx, MouseButton::Left) {
-            self.point = vec2(x, y);
+            self.point = Point2::new(x, y);
         }
     }
 }

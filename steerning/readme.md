@@ -1,3 +1,7 @@
+# TODO
+
+migrate to nalgebra
+
 # Forum 
 
 ## Math libraries chaos
