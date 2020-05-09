@@ -29,4 +29,4 @@ shred-derive = "0.6.*"
 # 3d
 # obj-rs = "0.6.0"
 ggez = "0.5"
-obj-rs = { version = "*", path = "/home/sisso/workspace/others/obj-rs-2" }
+obj-rs = { version = "*", path = "../../obj-rs" }
