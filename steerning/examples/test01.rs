@@ -1,6 +1,8 @@
-use cgmath::Point2;
+extern crate steerning;
+use steerning::*;
+
 use cgmath::{
-    prelude::*, vec2, vec3, Deg, Euler, InnerSpace, Quaternion, Rad, Vector2, VectorSpace,
+    prelude::*, vec2, vec3, Deg, Euler, InnerSpace, Point2, Quaternion, Rad, Vector2, VectorSpace,
 };
 use ggez::conf::WindowMode;
 use ggez::event::{self, Button, EventHandler, KeyCode, KeyMods, MouseButton};
@@ -49,12 +51,12 @@ struct MovingArea {
     polygons: Vec<Polygon>,
 }
 
-fn to_point(p2: Point2<f32>) -> GPoint {
+fn to_point(p2: P2) -> GPoint {
     (p2.x as f64, p2.y as f64).into()
 }
 
 impl MovingArea {
-    pub fn is_valid(&self, point: Point2<f32>) -> bool {
+    pub fn is_valid(&self, point: P2) -> bool {
         self.polygons
             .iter()
             .any(|polygon| polygon.contains_point(to_point(point)))
@@ -63,10 +65,10 @@ impl MovingArea {
 
 #[derive(Clone, Debug, Component)]
 struct Vehicle {
-    pos: Point2<f32>,
-    vel: Vector2<f32>,
+    pos: P2,
+    vel: V2,
     max_acc: f32,
-    steering_vel: Vec<Vector2<f32>>,
+    steering_vel: Vec<V2>,
     max_speed: f32,
 }
 
@@ -80,14 +82,14 @@ struct SteeringSeparation {
 #[derive(Clone, Debug, Component)]
 struct SteeringVelocity {
     enabled: bool,
-    vel: Vector2<f32>,
+    vel: V2,
     weight: f32,
 }
 
 #[derive(Clone, Debug, Component)]
 struct SteeringArrival {
     enabled: bool,
-    target_pos: Point2<f32>,
+    target_pos: P2,
     distance: f32,
     weight: f32,
 }
@@ -95,16 +97,28 @@ struct SteeringArrival {
 #[derive(Clone, Debug, Component)]
 struct Model {
     size: f32,
-    pos: Point2<f32>,
+    pos: P2,
     color: graphics::Color,
 }
 
 #[derive(Clone, Debug, Component)]
 struct Wall {
-    point_a: Point2<f32>,
-    point_b: Point2<f32>,
-    force: Vector2<f32>,
+    pos: P2,
+    vec: V2,
+    force: f32,
     min_distance: f32,
+}
+
+impl Wall {
+    pub fn new_from_points(p0: P2, p1: P2, min_distance: f32, force: f32) -> Self {
+        let vec = p1.to_vec() - p0.to_vec();
+        Wall {
+            pos: p0,
+            vec: vec,
+            force: force,
+            min_distance,
+        }
+    }
 }
 
 struct App {
@@ -144,22 +158,17 @@ impl App {
             });
 
             for (p0, p1, f, d) in vec![
-                (points[0], points[1], Vector2::new(0.0, 10.0), 20.0),
-                (points[1], points[2], Vector2::new(-10.0, 0.0), 20.0),
-                (points[2], points[3], Vector2::new(0.0, -10.0), 20.0),
-                (points[3], points[0], Vector2::new(1.0, 10.0), 20.0),
+                (points[0], points[1], 10.0, 20.0),
+                (points[1], points[2], 10.0, 20.0),
+                (points[2], points[3], 10.0, 20.0),
+                (points[3], points[0], 10.0, 20.0),
             ] {
                 let p0 = Point2::new(p0.x as f32, p0.y as f32);
                 let p1 = Point2::new(p1.x as f32, p1.y as f32);
 
                 world
                     .create_entity()
-                    .with(Wall {
-                        point_a: p0,
-                        point_b: p1,
-                        force: f,
-                        min_distance: d,
-                    })
+                    .with(Wall::new_from_points(p0, p1, f, d))
                     .build();
             }
         }
@@ -417,6 +426,30 @@ impl<'a> System<'a> for UpdateModelPosSystem {
     }
 }
 
+fn draw_circle(
+    ctx: &mut Context,
+    pos: P2,
+    size: f32,
+    color: Color,
+    width: f32,
+    fill: bool,
+) -> GameResult<()> {
+    let mode = if fill {
+        graphics::DrawMode::fill()
+    } else {
+        graphics::DrawMode::stroke(width)
+    };
+
+    let circle = graphics::Mesh::new_circle(ctx, mode, pos, size, 0.1, color)?;
+
+    graphics::draw(ctx, &circle, graphics::DrawParam::default())
+}
+
+fn draw_line(ctx: &mut Context, p0: P2, p1: P2, color: Color, width: f32) -> GameResult<()> {
+    let mesh = graphics::Mesh::new_line(ctx, &[p0, p1], width, color)?;
+    graphics::draw(ctx, &mesh, graphics::DrawParam::default())
+}
+
 impl EventHandler for App {
     fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
         let delta = timer::delta(ctx).as_secs_f32();
@@ -472,7 +505,11 @@ impl EventHandler for App {
         if cfg.draw_walls {
             for wall in (&self.world.read_storage::<Wall>()).join() {
                 let mut mb = graphics::MeshBuilder::new();
-                mb.line(&[wall.point_a, wall.point_b], wall.min_distance, color_wall);
+                mb.line(
+                    &[wall.pos, Point2::from_vec(wall.pos.to_vec() + wall.vec)],
+                    wall.min_distance,
+                    color_wall,
+                );
                 let mesh = mb.build(ctx)?;
                 graphics::draw(ctx, &mesh, graphics::DrawParam::default())?;
             }
@@ -482,7 +519,7 @@ impl EventHandler for App {
             let moving_area = &self.world.read_resource::<MovingArea>();
 
             for polygon in &moving_area.polygons {
-                let points: Vec<Point2<f32>> = polygon
+                let points: Vec<P2> = polygon
                     .vertices()
                     .iter()
                     .map(|point| Point2::new(point.x as f32, point.y as f32))

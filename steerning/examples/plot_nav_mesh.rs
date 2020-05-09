@@ -4,7 +4,7 @@ use ggez::event::{self, EventHandler, KeyCode, KeyMods};
 use ggez::{graphics, timer, Context, ContextBuilder, GameResult};
 use itertools::Itertools;
 use obj::raw::object::Point;
-use obj::{load_obj, Obj};
+use obj::{load_obj, Obj, Position};
 use std::fs::File;
 use std::io::BufReader;
 use utils::lerp_2;
@@ -13,7 +13,7 @@ const WIDTH: f32 = 1600.0;
 const HEIGHT: f32 = 1200.0;
 
 struct App {
-    obj: Obj,
+    obj: Obj<Position>,
     pos: cgmath::Point2<f32>,
     scale: f32,
     disply_points: bool,
@@ -22,8 +22,7 @@ struct App {
 impl App {
     pub fn new(ctx: &mut Context) -> GameResult<App> {
         let input = BufReader::new(File::open("resources/navmesh.obj").unwrap());
-        let mut obj: Obj = load_obj(input).unwrap();
-        // normalize(&mut obj);
+        let obj: Obj<Position> = load_obj(input).unwrap();
 
         let game = App {
             obj,
@@ -47,10 +46,11 @@ impl EventHandler for App {
             (coords[0], coords[2]).into()
         }
 
+        // TOOD this is just horrible, simplify
         for i in (0..self.obj.indices.len()).step_by(3) {
-            let i0 = self.obj.indices[i + 0];
-            let i1 = self.obj.indices[i + 1];
-            let i2 = self.obj.indices[i + 2];
+            let i0 = self.obj.indices[i + 0] as usize;
+            let i1 = self.obj.indices[i + 1] as usize;
+            let i2 = self.obj.indices[i + 2] as usize;
             let v0 = convert(self.obj.vertices[i0].position);
             let v1 = convert(self.obj.vertices[i1].position);
             let v2 = convert(self.obj.vertices[i2].position);
