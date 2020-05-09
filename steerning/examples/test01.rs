@@ -19,8 +19,8 @@ use utils::lerp_2;
 
 // TODO: add parallelism
 
-const WIDTH: f32 = 1600.0;
-const HEIGHT: f32 = 1200.0;
+const WIDTH: f32 = 800.0;
+const HEIGHT: f32 = 600.0;
 
 #[derive(Clone, Debug, Component)]
 struct Cfg {
@@ -37,6 +37,21 @@ impl Cfg {
             speed_reduction: 0.9,
             draw_walls: true,
             mobs: 100,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Component)]
+struct DebugStuff {
+    lines: Vec<(P2, P2, Color)>,
+    circles: Vec<(P2, f32, Color)>,
+}
+
+impl DebugStuff {
+    pub fn new() -> Self {
+        DebugStuff {
+            lines: Default::default(),
+            circles: Default::default(),
         }
     }
 }
@@ -143,9 +158,10 @@ impl App {
         let cfg = Cfg::new();
 
         world.insert(GameTime { delta_time: 0.01 });
+        world.insert(DebugStuff::new());
 
         {
-            let border = 160.0;
+            let border = 80.0;
             let points = vec![
                 (border, border).into(),
                 (WIDTH as f64 - border, border).into(),
@@ -157,18 +173,21 @@ impl App {
                 polygons: vec![Polygon::try_new(points.clone()).unwrap()],
             });
 
-            for (p0, p1, f, d) in vec![
-                (points[0], points[1], 10.0, 20.0),
-                (points[1], points[2], 10.0, 20.0),
-                (points[2], points[3], 10.0, 20.0),
-                (points[3], points[0], 10.0, 20.0),
+            let wall_width = 15.0;
+            let wall_force = 100.0;
+
+            for (p0, p1, distance, force) in vec![
+                (points[0], points[1], wall_width, wall_force),
+                (points[1], points[2], wall_width, wall_force),
+                (points[2], points[3], wall_width, wall_force),
+                (points[3], points[0], wall_width, wall_force),
             ] {
                 let p0 = Point2::new(p0.x as f32, p0.y as f32);
                 let p1 = Point2::new(p1.x as f32, p1.y as f32);
 
                 world
                     .create_entity()
-                    .with(Wall::new_from_points(p0, p1, f, d))
+                    .with(Wall::new_from_points(p0, p1, distance, force))
                     .build();
             }
         }
@@ -344,7 +363,25 @@ impl<'a> System<'a> for SteeringWallsSystem {
         use specs::Join;
 
         for (vehicle) in (&mut vehicles).join() {
-            for (wall) in (&walls).join() {}
+            for (wall) in (&walls).join() {
+                if let Some(vector) =
+                    compute_vector_from_point_to_segment(wall.pos, wall.vec, vehicle.pos)
+                {
+                    let distance = vector.magnitude();
+                    if distance < wall.min_distance {
+                        // let dir = vector.normalize() * -1.0;
+                        let force = lerp_2(0.0, wall.force, wall.min_distance, 0.0, distance);
+                        let desired_vel = vector.normalize() * -1.0 * force * force;
+
+                        // println!(
+                        //     "wall collision pos {:?} vec {:?} dir {:?} distance {:?}",
+                        //     vehicle.pos, vector, dir, distance
+                        // );
+
+                        vehicle.steering_vel.push(desired_vel);
+                    }
+                }
+            }
         }
     }
 }
@@ -460,6 +497,7 @@ impl EventHandler for App {
                 .with(SteerArrivalSystem, "steering_arrival", &[])
                 .with(SteeringSeparationSystem, "steering_separation", &[])
                 .with(SteeringVelocitySystem, "steering_velocity", &[])
+                .with(SteeringWallsSystem, "steering_walls", &[])
                 .with(
                     MoveSystem,
                     "move",
@@ -467,6 +505,7 @@ impl EventHandler for App {
                         "steering_arrival",
                         "steering_separation",
                         "steering_velocity",
+                        "steering_walls",
                     ],
                 )
                 .with(BordersTeleportSystem, "border_teleport", &["move"])
@@ -482,32 +521,14 @@ impl EventHandler for App {
         graphics::clear(ctx, graphics::BLACK);
 
         let cfg = &self.world.read_resource::<Cfg>();
-        let color_wall = Color::new(0.0, 1.0, 0.5, 1.0);
-
-        {
-            let models = &self.world.read_storage::<Model>();
-
-            for (model) in (models).join() {
-                // println!("{:?} drawing {:?} at {:?}", e, model, mov);
-                let circle = graphics::Mesh::new_circle(
-                    ctx,
-                    // graphics::DrawMode::fill(),
-                    graphics::DrawMode::stroke(1.0),
-                    model.pos,
-                    model.size,
-                    0.1,
-                    model.color,
-                )?;
-                graphics::draw(ctx, &circle, graphics::DrawParam::default())?;
-            }
-        }
+        let color_wall = Color::new(0.0, 1.0, 0.5, 0.5);
 
         if cfg.draw_walls {
             for wall in (&self.world.read_storage::<Wall>()).join() {
                 let mut mb = graphics::MeshBuilder::new();
                 mb.line(
                     &[wall.pos, Point2::from_vec(wall.pos.to_vec() + wall.vec)],
-                    wall.min_distance,
+                    wall.min_distance * 2.0,
                     color_wall,
                 );
                 let mesh = mb.build(ctx)?;
@@ -534,6 +555,14 @@ impl EventHandler for App {
                 )?;
 
                 graphics::draw(ctx, &mesh, graphics::DrawParam::default())?;
+            }
+        }
+
+        {
+            let models = &self.world.read_storage::<Model>();
+
+            for (model) in (models).join() {
+                draw_circle(ctx, model.pos, model.size, model.color, 1.0, false)?;
             }
         }
 
