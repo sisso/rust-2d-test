@@ -3,4 +3,5 @@ members = [
     "gravity",
     "steerning",
     "utils",
+    "image-showcase",
 ]
