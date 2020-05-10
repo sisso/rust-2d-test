@@ -1,0 +1,8 @@
+{
+  "seed": 0,
+  "vehicles": 250,
+  "followers": 10,
+  "max_acc": 100.0,
+  "max_speed": 50.0,
+  "separation_radius": 2.0
+}

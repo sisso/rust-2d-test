@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::BufReader;
 
 fn main() {
-    let input = BufReader::new(File::open("resources/navmesh.obj").unwrap());
+    let input = BufReader::new(File::open("steering/resources/navmesh.obj").unwrap());
     let obj: Obj<Position> = load_obj(input).unwrap();
     // let dome: Obj = load_obj(input).unwrap();
 

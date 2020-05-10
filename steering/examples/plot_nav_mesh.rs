@@ -21,7 +21,7 @@ struct App {
 
 impl App {
     pub fn new(ctx: &mut Context) -> GameResult<App> {
-        let input = BufReader::new(File::open("resources/navmesh.obj").unwrap());
+        let input = BufReader::new(File::open("steering/resources/navmesh.obj").unwrap());
         let obj: Obj<Position> = load_obj(input).unwrap();
 
         let game = App {

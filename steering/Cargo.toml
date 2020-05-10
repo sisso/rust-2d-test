@@ -4,9 +4,6 @@ version = "0.1.0"
 authors = ["sisso <sisso@sisso.com.br>"]
 edition = "2018"
 
-[profile.dev]
-opt-level = 1
-
 [dependencies]
 # math
 cgmath = { version = "0.17", features = ["mint"]}
@@ -29,5 +26,5 @@ shred-derive = "0.6.*"
 
 # 3d
 obj-rs = "*"
-ggez = "0.5"
+ggez = "0.5.*"
 #obj-rs = { version = "*", path = "../../obj-rs" }

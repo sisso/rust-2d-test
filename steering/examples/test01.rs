@@ -7,10 +7,11 @@ use cgmath::{
 use ggez::conf::WindowMode;
 use ggez::event::{self, Button, EventHandler, KeyCode, KeyMods, MouseButton};
 use ggez::graphics::Color;
-use ggez::{graphics, timer, Context, ContextBuilder, GameResult};
+use ggez::{graphics, timer, Context, ContextBuilder, GameError, GameResult};
 use myelin_geometry::{Point as GPoint, Polygon};
 use rand::prelude::StdRng;
 use rand::{thread_rng, Rng, SeedableRng};
+use serde::{Deserialize, Serialize};
 use specs::prelude::*;
 use specs::{World, WorldExt};
 use specs_derive::Component;
@@ -22,21 +23,25 @@ use utils::lerp_2;
 const WIDTH: f32 = 800.0;
 const HEIGHT: f32 = 600.0;
 
-#[derive(Clone, Debug, Component)]
+#[derive(Clone, Debug, Component, Serialize, Deserialize)]
 struct Cfg {
-    update_next: bool,
-    speed_reduction: f32,
-    draw_walls: bool,
+    seed: u64,
     vehicles: usize,
+    followers: usize,
+    max_acc: f32,
+    max_speed: f32,
+    separation_radius: f32,
 }
 
 impl Cfg {
     pub fn new() -> Self {
         Cfg {
-            update_next: true,
-            speed_reduction: 0.9,
-            draw_walls: true,
-            vehicles: 100,
+            seed: 0,
+            vehicles: 0,
+            followers: 0,
+            max_acc: 0.0,
+            max_speed: 0.0,
+            separation_radius: 0.0,
         }
     }
 }
@@ -185,11 +190,41 @@ impl Wall {
 }
 
 struct App {
+    update_next: bool,
     world: World,
 }
 
 impl App {
     pub fn new(ctx: &mut Context) -> GameResult<App> {
+        let cfg = App::load_cfg()?;
+        let world = App::create_world(cfg)?;
+        let game = App {
+            update_next: true,
+            world,
+        };
+        Ok(game)
+    }
+
+    pub fn reload(&mut self) -> GameResult<()> {
+        let cfg = App::load_cfg()?;
+        let world = App::create_world(cfg)?;
+        self.world = world;
+        Ok(())
+    }
+
+    pub fn load_cfg() -> GameResult<Cfg> {
+        let reader =
+            std::io::BufReader::new(std::fs::File::open("steering/resources/config.json").unwrap());
+
+        let cfg: serde_json::Result<Cfg> = serde_json::from_reader(reader);
+
+        match cfg {
+            Ok(cfg) => Ok(cfg),
+            Err(e) => Err(GameError::ConfigError("invalid config file".to_string())),
+        }
+    }
+
+    pub fn create_world(cfg: Cfg) -> GameResult<World> {
         let mut rng: StdRng = SeedableRng::seed_from_u64(0);
 
         // create world
@@ -203,8 +238,6 @@ impl App {
         world.register::<SteeringVelocity>();
         world.register::<Wall>();
         world.register::<SteeringFormationMember>();
-
-        let cfg = Cfg::new();
 
         world.insert(GameTime { delta_time: 0.01 });
         world.insert(DebugStuff::new());
@@ -337,8 +370,7 @@ impl App {
 
         world.insert(cfg);
 
-        let game = App { world };
-        Ok(game)
+        Ok(world)
     }
 }
 
@@ -605,7 +637,7 @@ impl EventHandler for App {
         let delta = timer::delta(ctx).as_secs_f32();
         self.world.insert(GameTime { delta_time: delta });
 
-        if self.world.read_resource::<Cfg>().update_next {
+        if self.update_next {
             let mut dispatcher = DispatcherBuilder::new()
                 .with(SteerArrivalSystem, "steering_arrival", &[])
                 .with(SteeringSeparationSystem, "steering_separation", &[])
@@ -638,7 +670,7 @@ impl EventHandler for App {
         let cfg = &self.world.read_resource::<Cfg>();
         let color_wall = Color::new(0.0, 1.0, 0.5, 0.5);
 
-        if cfg.draw_walls {
+        {
             for wall in (&self.world.read_storage::<Wall>()).join() {
                 let mut mb = graphics::MeshBuilder::new();
                 mb.line(
@@ -707,8 +739,12 @@ impl EventHandler for App {
     fn key_up_event(&mut self, _ctx: &mut Context, keycode: KeyCode, _keymods: KeyMods) {
         match keycode {
             KeyCode::Space => {
-                let cfg = &mut self.world.write_resource::<Cfg>();
-                cfg.update_next = !cfg.update_next;
+                self.update_next = !self.update_next;
+            }
+            KeyCode::Return => {
+                if let Err(e) = self.reload() {
+                    println!("fail to relaod config file: {:?}", e);
+                }
             }
             _ => {}
         }

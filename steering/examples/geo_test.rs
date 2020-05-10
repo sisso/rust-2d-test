@@ -23,15 +23,6 @@ fn test_1() {
     panic!("not");
 }
 
-fn check_point_to_segment(
-    segment_0: Vector2<f32>,
-    segment_1: Vector2<f32>,
-    point: Vector2<f32>,
-) -> Option<f32> {
-    let proj = line_segment_project(segment_0, segment_1, point);
-    None
-}
-
 #[test]
 fn test_simplify() {
     let segment_0 = Vector2::new(0.0, 0.0);

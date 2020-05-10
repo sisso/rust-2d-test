@@ -1,6 +1,9 @@
 # TODO
 
-migrate to nalgebra
+- fix vehicles formation
+- create more complex map
+- migrate to nalgebra
+- use ggez.filesystem
 
 # Forum 
 
