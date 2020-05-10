@@ -91,12 +91,20 @@ struct Vehicle {
     pos: P2,
     /// normalized
     dir: V2,
+    desired_dir: V2,
     vel: V2,
     max_acc: f32,
     // TODO: replace by single vector that is zero in start
     steering_vel: Vec<V2>,
     rotation_speed: f32,
     max_speed: f32,
+    desired_dir_toward_vel: bool,
+}
+
+impl Vehicle {
+    pub fn rotate_towards_vec(&mut self, vec: V2, delta_time: f32) {
+        self.dir = rotate_towards(self.dir, vec, Rad(self.rotation_speed * delta_time));
+    }
 }
 
 #[derive(Clone, Debug, Component)]
@@ -347,11 +355,13 @@ impl App {
                 .with(Vehicle {
                     pos,
                     dir: dir,
+                    desired_dir: dir,
                     vel: Vector2::zero(),
                     max_acc: max_acc,
                     rotation_speed: deg2rad(cfg.rotation_speed),
                     steering_vel: vec![],
                     max_speed,
+                    desired_dir_toward_vel: false,
                 })
                 .with(Model {
                     size: radius,
@@ -486,7 +496,7 @@ impl<'a> System<'a> for SteeringVelocitySystem {
 
             let vehicle: &mut Vehicle = vehicle;
             vehicle.steering_vel.push(velocity.vel * velocity.weight);
-            vehicle.dir = velocity.vel.normalize();
+            vehicle.desired_dir = velocity.vel.normalize();
         }
     }
 }
@@ -533,8 +543,9 @@ impl<'a> System<'a> for MoveSystem {
 
         for (vehicle) in (&mut vehicles).join() {
             let vehicle: &mut Vehicle = vehicle;
-            let velocities = std::mem::replace(&mut vehicle.steering_vel, vec![]);
 
+            // compute new velocity
+            let velocities = std::mem::replace(&mut vehicle.steering_vel, vec![]);
             let desired_velocity = velocities.into_iter().fold(Vector2::zero(), |a, b| a + b);
 
             let mut delta_velocity = desired_velocity - vehicle.vel;
@@ -543,20 +554,26 @@ impl<'a> System<'a> for MoveSystem {
             }
 
             vehicle.vel += delta_velocity * delta_time;
+
+            // normalize velocity
             let current_speed = vehicle.vel.magnitude();
             if current_speed > vehicle.max_speed {
                 vehicle.vel = vehicle.vel.normalize() * vehicle.max_speed;
             }
 
-            if current_speed > 1.0 {
-                vehicle.dir = rotate_towards(
-                    vehicle.dir,
-                    vehicle.vel.normalize(),
-                    Rad(vehicle.rotation_speed * delta_time),
-                );
+            // move
+            vehicle.pos += vehicle.vel * delta_time;
+
+            // update direction
+            if vehicle.desired_dir_toward_vel && current_speed > 1.0 {
+                vehicle.desired_dir = vehicle.vel.normalize();
             }
 
-            vehicle.pos += vehicle.vel * delta_time;
+            vehicle.dir = rotate_towards(
+                vehicle.dir,
+                vehicle.desired_dir,
+                Rad(vehicle.rotation_speed * delta_time),
+            );
         }
     }
 }
@@ -599,6 +616,7 @@ impl<'a> System<'a> for SteerArrivalSystem {
             } else {
                 let dir = delta.normalize();
                 vehicle.steering_vel.push(dir * speed * arrival.weight);
+                vehicle.desired_dir = dir;
             }
         }
     }
