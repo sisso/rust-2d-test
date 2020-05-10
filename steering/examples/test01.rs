@@ -85,23 +85,28 @@ impl MovingArea {
     }
 }
 
-/// Replace vel by unit vel + speed
 #[derive(Clone, Debug, Component)]
 struct Vehicle {
     pos: P2,
     /// normalized
     dir: V2,
+    /// normalized
     desired_dir: V2,
-    vel: V2,
+    /// normalized
+    vel_dir: V2,
+    speed: f32,
     max_acc: f32,
     // TODO: replace by single vector that is zero in start
     steering_vel: Vec<V2>,
     rotation_speed: f32,
     max_speed: f32,
-    desired_dir_toward_vel: bool,
 }
 
 impl Vehicle {
+    pub fn get_velocity(&self) -> V2 {
+        self.vel_dir * self.speed
+    }
+
     pub fn rotate_towards_vec(&mut self, vec: V2, delta_time: f32) {
         self.dir = rotate_towards(self.dir, vec, Rad(self.rotation_speed * delta_time));
     }
@@ -356,12 +361,12 @@ impl App {
                     pos,
                     dir: dir,
                     desired_dir: dir,
-                    vel: Vector2::zero(),
+                    vel_dir: Vector2::zero(),
+                    speed: 0.0,
                     max_acc: max_acc,
                     rotation_speed: deg2rad(cfg.rotation_speed),
                     steering_vel: vec![],
                     max_speed,
-                    desired_dir_toward_vel: false,
                 })
                 .with(Model {
                     size: radius,
@@ -544,36 +549,43 @@ impl<'a> System<'a> for MoveSystem {
         for (vehicle) in (&mut vehicles).join() {
             let vehicle: &mut Vehicle = vehicle;
 
-            // compute new velocity
-            let velocities = std::mem::replace(&mut vehicle.steering_vel, vec![]);
-            let desired_velocity = velocities.into_iter().fold(Vector2::zero(), |a, b| a + b);
+            // apply steerning
+            {
+                // compute new velocity
+                let velocities = std::mem::replace(&mut vehicle.steering_vel, vec![]);
+                let desired_velocity = velocities.into_iter().fold(Vector2::zero(), |a, b| a + b);
 
-            let mut delta_velocity = desired_velocity - vehicle.vel;
-            if delta_velocity.magnitude() > vehicle.max_acc {
-                delta_velocity = delta_velocity.normalize() * vehicle.max_acc;
-            }
+                let current_vel = vehicle.vel_dir * vehicle.speed;
+                let mut delta_velocity = desired_velocity - current_vel;
+                if delta_velocity.magnitude() > vehicle.max_acc {
+                    delta_velocity = delta_velocity.normalize() * vehicle.max_acc;
+                }
 
-            vehicle.vel += delta_velocity * delta_time;
+                let new_vel = current_vel + delta_velocity * delta_time;
 
-            // normalize velocity
-            let current_speed = vehicle.vel.magnitude();
-            if current_speed > vehicle.max_speed {
-                vehicle.vel = vehicle.vel.normalize() * vehicle.max_speed;
+                // normalize velocity
+                let mut new_speed = new_vel.magnitude();
+                vehicle.vel_dir = new_vel / new_speed;
+
+                if new_speed > vehicle.max_speed {
+                    new_speed = vehicle.max_speed;
+                }
+                vehicle.speed = new_speed;
             }
 
             // move
-            vehicle.pos += vehicle.vel * delta_time;
-
-            // update direction
-            if vehicle.desired_dir_toward_vel && current_speed > 1.0 {
-                vehicle.desired_dir = vehicle.vel.normalize();
+            {
+                vehicle.pos += vehicle.vel_dir * vehicle.speed * delta_time;
             }
 
-            vehicle.dir = rotate_towards(
-                vehicle.dir,
-                vehicle.desired_dir,
-                Rad(vehicle.rotation_speed * delta_time),
-            );
+            // update direction
+            {
+                vehicle.dir = rotate_towards(
+                    vehicle.dir,
+                    vehicle.desired_dir,
+                    Rad(vehicle.rotation_speed * delta_time),
+                );
+            }
         }
     }
 }
@@ -640,7 +652,7 @@ impl<'a> System<'a> for SteeringFormationSystem {
 
         for (e, v, f, a) in (&entities, &vehicles, &formations, &arrivals).join() {
             if f.index == 0 {
-                leader = Some((v.pos, v.vel, a.target_pos));
+                leader = Some((v.pos, v.get_velocity(), a.target_pos));
             } else {
                 followers.add(e.id());
                 total_followers += 1;
@@ -737,7 +749,7 @@ impl EventHandler for App {
                     &[wall.pos, Point2::from_vec(wall.pos.to_vec() + wall.vec)],
                     wall.min_distance * 2.0,
                     color_wall,
-                );
+                )?;
                 let mesh = mb.build(ctx)?;
                 graphics::draw(ctx, &mesh, graphics::DrawParam::default())?;
             }
