@@ -1,6 +1,6 @@
 use cgmath::{
-    assert_relative_eq, prelude::*, Euler, InnerSpace, Point2, Quaternion, Rad, Vector2, Vector3,
-    VectorSpace,
+    assert_relative_eq, prelude::*, vec2, Deg, Euler, InnerSpace, Point2, Quaternion, Rad, Vector2,
+    Vector3, VectorSpace,
 };
 
 pub type P2 = Point2<f32>;
@@ -18,6 +18,52 @@ pub fn rotate_vector(dir: V2, point: V2) -> V2 {
     let pointv3 = Vector3::new(point.x, point.y, 0.0);
     let rotated = qt * pointv3;
     Vector2::new(rotated.x, rotated.y)
+}
+
+pub fn rotate_vector_by_angle(vec: V2, angle: Rad<f32>) -> V2 {
+    let qt = Quaternion::from(Euler {
+        x: Rad(0.0),
+        y: Rad(0.0),
+        z: angle,
+    });
+
+    let pointv3 = Vector3::new(vec.x, vec.y, 0.0);
+    let rotated = qt * pointv3;
+    Vector2::new(rotated.x, rotated.y)
+}
+
+pub fn rotate_towards(vec: V2, dir: V2, max_angle: Rad<f32>) -> V2 {
+    let current_angle = vec.y.atan2(vec.x);
+    let target_angle = dir.y.atan2(dir.x);
+
+    let mut delta = target_angle - current_angle;
+    let pi = std::f32::consts::PI;
+    let pi2 = 2.0 * pi;
+
+    while delta > pi {
+        delta -= pi2;
+    }
+
+    while delta < -pi {
+        delta += pi2;
+    }
+
+    if delta > max_angle.0 {
+        delta = max_angle.0;
+    } else if delta < -max_angle.0 {
+        delta = -max_angle.0;
+    }
+
+    let new_angle = current_angle + delta;
+    Vector2::new(new_angle.cos(), new_angle.sin())
+}
+
+pub fn rad2deg(value: f32) -> f32 {
+    Deg::from(Rad(value)).0
+}
+
+pub fn deg2rad(value: f32) -> f32 {
+    Rad::from(Deg(value)).0
 }
 
 /// compute a vector that go from the point to the segment
@@ -60,7 +106,7 @@ fn test_segement_projection() {
 }
 
 #[test]
-fn test_segement_projection_percent() {
+fn test_segment_projection_percent() {
     let point: P2 = Point2::new(10.0, 0.0);
     let line_0 = Vector2::new(-10.0, -10.0);
     let line_1 = Vector2::new(10.0, -10.0);
@@ -69,4 +115,16 @@ fn test_segement_projection_percent() {
 
     let proj = line_segment_project_percent(line_pos, line_vec, point);
     assert_relative_eq!(proj, 1.0);
+}
+
+#[test]
+fn test_rotate_towards() {
+    let vector = vec2(0.0, 1.0);
+    let desired = vec2(1.0, 0.0);
+
+    let new_vector = rotate_towards(vector, desired, Deg(45.0).into());
+    assert_relative_eq!(new_vector, vec2(0.70710677, 0.70710677));
+
+    let new_vector = rotate_towards(new_vector, desired, Deg(45.0).into());
+    assert_relative_eq!(new_vector, vec2(1.0, 0.0));
 }

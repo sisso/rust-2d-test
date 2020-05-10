@@ -4,5 +4,6 @@
   "followers": 10,
   "max_acc": 200.0,
   "max_speed": 25.0,
+  "rotation_speed": 420.0,
   "separation_radius": 1.5
 }

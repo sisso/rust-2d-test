@@ -30,6 +30,7 @@ struct Cfg {
     followers: usize,
     max_acc: f32,
     max_speed: f32,
+    rotation_speed: f32,
     separation_radius: f32,
 }
 
@@ -41,6 +42,7 @@ impl Cfg {
             followers: 0,
             max_acc: 0.0,
             max_speed: 0.0,
+            rotation_speed: 0.0,
             separation_radius: 0.0,
         }
     }
@@ -83,12 +85,17 @@ impl MovingArea {
     }
 }
 
+/// Replace vel by unit vel + speed
 #[derive(Clone, Debug, Component)]
 struct Vehicle {
     pos: P2,
+    /// normalized
+    dir: V2,
     vel: V2,
     max_acc: f32,
+    // TODO: replace by single vector that is zero in start
     steering_vel: Vec<V2>,
+    rotation_speed: f32,
     max_speed: f32,
 }
 
@@ -112,6 +119,11 @@ struct SteeringArrival {
     target_pos: P2,
     distance: f32,
     weight: f32,
+}
+
+#[derive(Clone, Debug, Component)]
+struct SteeringFormationLeader {
+    formation: Option<Formation>,
 }
 
 #[derive(Clone, Debug, Component)]
@@ -166,6 +178,8 @@ impl Formation {
 struct Model {
     size: f32,
     pos: P2,
+    /// normalize direction
+    dir: V2,
     color: graphics::Color,
 }
 
@@ -238,6 +252,7 @@ impl App {
         world.register::<SteeringVelocity>();
         world.register::<Wall>();
         world.register::<SteeringFormationMember>();
+        world.register::<SteeringFormationLeader>();
 
         world.insert(GameTime { delta_time: 0.01 });
         world.insert(DebugStuff::new());
@@ -324,18 +339,24 @@ impl App {
                 Color::new(1.0, 0.0, 0.0, 1.0)
             };
 
+            let dir =
+                rotate_vector_by_angle(Vector2::unit_y(), Deg(rng.gen_range(0.0, 360.0)).into());
+
             let mut builder = world
                 .create_entity()
                 .with(Vehicle {
                     pos,
+                    dir: dir,
                     vel: Vector2::zero(),
                     max_acc: max_acc,
+                    rotation_speed: deg2rad(cfg.rotation_speed),
                     steering_vel: vec![],
                     max_speed,
                 })
                 .with(Model {
                     size: radius,
                     pos: Point2::new(0.0, 0.0),
+                    dir,
                     color,
                 })
                 .with(SteeringArrival {
@@ -356,6 +377,10 @@ impl App {
                 });
 
             if follow {
+                if formation_index == 0 {
+                    builder = builder.with(SteeringFormationLeader { formation: None });
+                }
+
                 builder = builder.with(SteeringFormationMember {
                     index: formation_index,
                 });
@@ -461,6 +486,7 @@ impl<'a> System<'a> for SteeringVelocitySystem {
 
             let vehicle: &mut Vehicle = vehicle;
             vehicle.steering_vel.push(velocity.vel * velocity.weight);
+            vehicle.dir = velocity.vel.normalize();
         }
     }
 }
@@ -503,17 +529,34 @@ impl<'a> System<'a> for MoveSystem {
     fn run(&mut self, (game_time, mut vehicles): Self::SystemData) {
         use specs::Join;
 
+        let delta_time = game_time.delta_time;
+
         for (vehicle) in (&mut vehicles).join() {
             let vehicle: &mut Vehicle = vehicle;
             let velocities = std::mem::replace(&mut vehicle.steering_vel, vec![]);
+
             let desired_velocity = velocities.into_iter().fold(Vector2::zero(), |a, b| a + b);
+
             let mut delta_velocity = desired_velocity - vehicle.vel;
-            let step_max_acc = vehicle.max_acc * game_time.delta_time;
-            if delta_velocity.magnitude() > step_max_acc {
-                delta_velocity = delta_velocity.normalize() * step_max_acc;
+            if delta_velocity.magnitude() > vehicle.max_acc {
+                delta_velocity = delta_velocity.normalize() * vehicle.max_acc;
             }
-            vehicle.vel = vehicle.vel + delta_velocity;
-            vehicle.pos = vehicle.pos + vehicle.vel * game_time.delta_time;
+
+            vehicle.vel += delta_velocity * delta_time;
+            let current_speed = vehicle.vel.magnitude();
+            if current_speed > vehicle.max_speed {
+                vehicle.vel = vehicle.vel.normalize() * vehicle.max_speed;
+            }
+
+            if current_speed > 1.0 {
+                vehicle.dir = rotate_towards(
+                    vehicle.dir,
+                    vehicle.vel.normalize(),
+                    Rad(vehicle.rotation_speed * delta_time),
+                );
+            }
+
+            vehicle.pos += vehicle.vel * delta_time;
         }
     }
 }
@@ -598,10 +641,11 @@ struct UpdateModelPosSystem;
 impl<'a> System<'a> for UpdateModelPosSystem {
     type SystemData = (ReadStorage<'a, Vehicle>, WriteStorage<'a, Model>);
 
-    fn run(&mut self, (mobs, mut models): Self::SystemData) {
+    fn run(&mut self, (vehicles, mut models): Self::SystemData) {
         use specs::Join;
-        for (mob, model) in (&mobs, &mut models).join() {
-            model.pos = mob.pos;
+        for (vehicle, model) in (&vehicles, &mut models).join() {
+            model.pos = vehicle.pos;
+            model.dir = vehicle.dir;
         }
     }
 }
@@ -641,7 +685,7 @@ impl EventHandler for App {
                 .with(SteeringSeparationSystem, "steering_separation", &[])
                 .with(SteeringVelocitySystem, "steering_velocity", &[])
                 .with(SteeringWallsSystem, "steering_walls", &[])
-                .with(SteeringFormationSystem, "steering_formation", &[])
+                // .with(SteeringFormationSystem, "steering_formation", &[])
                 .with(
                     MoveSystem,
                     "move",
@@ -650,7 +694,7 @@ impl EventHandler for App {
                         "steering_separation",
                         "steering_velocity",
                         "steering_walls",
-                        "steering_formation",
+                        // "steering_formation",
                     ],
                 )
                 .with(BordersTeleportSystem, "border_teleport", &["move"])
@@ -708,6 +752,13 @@ impl EventHandler for App {
 
             for (model) in (models).join() {
                 draw_circle(ctx, model.pos, model.size, model.color, 1.0, false)?;
+                draw_line(
+                    ctx,
+                    model.pos,
+                    Point2::from_vec(model.pos.to_vec() + model.dir * model.size),
+                    model.color,
+                    1.0,
+                )?;
             }
         }
 
@@ -726,9 +777,9 @@ impl EventHandler for App {
         let mut arrival = self.world.write_component::<SteeringArrival>();
         let formation = self.world.read_component::<SteeringFormationMember>();
         for (formation, arrival) in (&formation, &mut arrival).join() {
-            if formation.index != 0 {
-                continue;
-            }
+            // if formation.index != 0 {
+            //     continue;
+            // }
 
             arrival.target_pos = (x, y).into();
         }
