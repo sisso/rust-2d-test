@@ -294,13 +294,13 @@ impl App {
             }
         }
 
-        let max_acc = 100.0;
-        let max_speed = 50.0;
-        let radius_mut = 2.0;
+        let max_acc = cfg.max_acc;
+        let max_speed = cfg.max_speed;
+        let separation_mut = cfg.separation_radius;
 
         let mut formation_index = 0;
 
-        for _ in 0..cfg.vehicles {
+        for i in 0..cfg.vehicles {
             let pos = Point2::new(
                 rng.gen_range(0.0, WIDTH as f32),
                 rng.gen_range(0.0, HEIGHT as f32),
@@ -311,17 +311,15 @@ impl App {
                 rng.gen_range(-max_speed, max_speed),
             );
 
-            let radius = match rng.gen_range(0, 10) {
-                0 => 5.0,
-                _ => 3.0,
-            };
-            let follow: bool = match rng.gen_range(0, 5) {
-                0 => true,
-                _ => false,
-            };
+            let radius = if rng.gen::<f32>() <= 0.1f32 { 6.0 } else { 3.0 };
+            let follow = i < cfg.followers;
 
             let color = if follow {
-                Color::new(1.0, 1.0, 0.0, 1.0)
+                if formation_index == 0 {
+                    Color::new(0.0, 1.0, 1.0, 1.0)
+                } else {
+                    Color::new(1.0, 1.0, 0.0, 1.0)
+                }
             } else {
                 Color::new(1.0, 0.0, 0.0, 1.0)
             };
@@ -348,7 +346,7 @@ impl App {
                 })
                 .with(SteeringSeparation {
                     enabled: true,
-                    distance: radius * radius_mut,
+                    distance: radius * separation_mut,
                     weight: 2.0,
                 })
                 .with(SteeringVelocity {
