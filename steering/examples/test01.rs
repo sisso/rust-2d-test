@@ -96,8 +96,7 @@ struct Vehicle {
     vel_dir: V2,
     speed: f32,
     max_acc: f32,
-    // TODO: replace by single vector that is zero in start
-    steering_vel: Vec<V2>,
+    desired_vel: V2,
     rotation_speed: f32,
     max_speed: f32,
 }
@@ -365,7 +364,7 @@ impl App {
                     speed: 0.0,
                     max_acc: max_acc,
                     rotation_speed: deg2rad(cfg.rotation_speed),
-                    steering_vel: vec![],
+                    desired_vel: Vector2::zero(),
                     max_speed,
                 })
                 .with(Model {
@@ -482,7 +481,8 @@ impl<'a> System<'a> for SteeringSeparationSystem {
             let vehicle = vehicles.get_mut(entity).unwrap();
             let vel = lerp_2(vehicle.max_speed * weight, 0.0, 0.0, min_distance, distance);
             let vector = vector.normalize() * -1.0;
-            vehicle.steering_vel.push(vector * vel);
+            // TODO: change vel?
+            vehicle.desired_vel += vector * vel;
         }
     }
 }
@@ -500,7 +500,8 @@ impl<'a> System<'a> for SteeringVelocitySystem {
             }
 
             let vehicle: &mut Vehicle = vehicle;
-            vehicle.steering_vel.push(velocity.vel * velocity.weight);
+            // TODO: change vel?
+            vehicle.desired_vel += velocity.vel * velocity.weight;
             vehicle.desired_dir = velocity.vel.normalize();
         }
     }
@@ -529,7 +530,8 @@ impl<'a> System<'a> for SteeringWallsSystem {
                         //     vehicle.pos, vector, dir, distance
                         // );
 
-                        vehicle.steering_vel.push(desired_vel);
+                        // TODO: change vel?
+                        vehicle.desired_vel += desired_vel;
                     }
                 }
             }
@@ -552,8 +554,8 @@ impl<'a> System<'a> for MoveSystem {
             // apply steerning
             {
                 // compute new velocity
-                let velocities = std::mem::replace(&mut vehicle.steering_vel, vec![]);
-                let desired_velocity = velocities.into_iter().fold(Vector2::zero(), |a, b| a + b);
+                let desired_velocity = vehicle.desired_vel;
+                vehicle.desired_vel = Vector2::zero();
 
                 let current_vel = vehicle.vel_dir * vehicle.speed;
                 let mut delta_velocity = desired_velocity - current_vel;
@@ -627,7 +629,7 @@ impl<'a> System<'a> for SteerArrivalSystem {
                 // vehicle.pos = arrival.target_pos;
             } else {
                 let dir = delta.normalize();
-                vehicle.steering_vel.push(dir * speed * arrival.weight);
+                vehicle.desired_vel += dir * speed * arrival.weight;
                 vehicle.desired_dir = dir;
             }
         }
