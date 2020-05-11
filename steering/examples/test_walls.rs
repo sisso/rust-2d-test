@@ -9,6 +9,7 @@ use ggez::graphics::Color;
 use ggez::{graphics, timer, Context, ContextBuilder, GameResult};
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
+use crate::math::*;
 
 const WIDTH: f32 = 800.0;
 const HEIGHT: f32 = 600.0;
@@ -107,7 +108,7 @@ impl EventHandler for App {
         {
             for wall in &self.walls {
                 if let Some(vec) =
-                    steerning::compute_vector_from_point_to_segment(wall.pos, wall.vec, self.point)
+                    compute_vector_from_point_to_segment(wall.pos, wall.vec, self.point)
                 {
                     let color = if vec.magnitude() > wall.min_distance {
                         proj_miss_color

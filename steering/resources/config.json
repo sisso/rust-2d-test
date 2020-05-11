@@ -1,4 +1,6 @@
 {
+  "screen_width": 800.0,
+  "screen_height": 600.0,
   "seed": 0,
   "vehicles": 100,
   "followers": 10,
