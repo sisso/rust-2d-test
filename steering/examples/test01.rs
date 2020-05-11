@@ -32,6 +32,7 @@ struct Cfg {
     max_speed: f32,
     rotation_speed: f32,
     separation_radius: f32,
+    start_position: [f32;4],
 }
 
 impl Cfg {
@@ -44,6 +45,7 @@ impl Cfg {
             max_speed: 0.0,
             rotation_speed: 0.0,
             separation_radius: 0.0,
+            start_position: [0.0, 0.0, 0.0, 0.0],
         }
     }
 }
@@ -131,7 +133,14 @@ struct SteeringArrival {
     target_pos: P2,
     distance: f32,
     weight: f32,
+    arrived: bool,
 }
+
+// #[derive(Clone, Debug, Component)]
+// struct SteeringKeepPosition {
+//     enable: bool,
+//     target_pos: P2,
+// }
 
 #[derive(Clone, Debug, Component)]
 struct SteeringFormationLeader {
@@ -329,8 +338,8 @@ impl App {
 
         for i in 0..cfg.vehicles {
             let pos = Point2::new(
-                rng.gen_range(0.0, WIDTH as f32),
-                rng.gen_range(0.0, HEIGHT as f32),
+                rng.gen_range(cfg.start_position[0], cfg.start_position[2]),
+                rng.gen_range(cfg.start_position[1], cfg.start_position[3]),
             );
 
             let vel = Vector2::new(
@@ -378,6 +387,7 @@ impl App {
                     target_pos: Point2::new(300.0, 300.0),
                     distance: 50.0,
                     weight: 1.0,
+                    arrived: false
                 })
                 .with(SteeringSeparation {
                     enabled: true,
@@ -464,25 +474,21 @@ impl<'a> System<'a> for SteeringSeparationSystem {
                 let distance = vector.magnitude();
 
                 if distance < min_distance {
+                    let vel = lerp_2(vehicle_a.max_speed * separation_a.weight, 0.0, 0.0, min_distance, distance);
+                    let vector = vector.normalize() * -1.0;
+
                     changes.push((
                         entity_a,
-                        vector,
-                        separation_a.weight,
-                        min_distance,
-                        distance,
+                        vector * vel,
                     ));
-                    // changes.push((entity_b, vector, min_distance, distance));
                 }
             }
         }
 
         let vehicles = &mut vehicles;
-        for (entity, vector, weight, min_distance, distance) in changes {
+        for (entity, desired_vel) in changes {
             let vehicle = vehicles.get_mut(entity).unwrap();
-            let vel = lerp_2(vehicle.max_speed * weight, 0.0, 0.0, min_distance, distance);
-            let vector = vector.normalize() * -1.0;
-            // TODO: change vel?
-            vehicle.desired_vel += vector * vel;
+            vehicle.desired_vel += desired_vel;
         }
     }
 }
@@ -595,43 +601,39 @@ impl<'a> System<'a> for MoveSystem {
 struct SteerArrivalSystem;
 impl<'a> System<'a> for SteerArrivalSystem {
     type SystemData = (
-        ReadExpect<'a, GameTime>,
         WriteStorage<'a, Vehicle>,
-        ReadStorage<'a, SteeringArrival>,
+        WriteStorage<'a, SteeringArrival>,
     );
 
-    fn run(&mut self, (game_time, mut mobs, steering_arrival): Self::SystemData) {
+    fn run(&mut self, (mut mobs, mut steering_arrival): Self::SystemData) {
         use specs::Join;
+        let min_distance_sqr = 0.1 * 0.1;
 
-        for (vehicle, arrival) in (&mut mobs, &steering_arrival).join() {
-            let arrival: &SteeringArrival = arrival;
+        for (vehicle, arrival) in (&mut mobs, &mut steering_arrival).join() {
+            let arrival: &mut SteeringArrival = arrival;
             if !arrival.enabled {
                 continue;
             }
 
             let vehicle: &mut Vehicle = vehicle;
             let delta = arrival.target_pos - vehicle.pos;
-            let distance: f32 = delta.magnitude();
-            if !distance.is_normal() || distance < 0.1 {
+            let distance_sqr: f32 = delta.magnitude2();
+            if !distance_sqr.is_normal() || distance_sqr < min_distance_sqr {
                 // arrival
+                arrival.arrived = true;
                 continue;
             }
+            arrival.arrived = false;
 
-            let speed = if distance > arrival.distance {
+            let speed = if distance_sqr > (arrival.distance * arrival.distance) {
                 vehicle.max_speed
             } else {
-                lerp_2(0.0, vehicle.max_speed, 0.0, arrival.distance, distance)
+                lerp_2(0.0, vehicle.max_speed, 0.0, arrival.distance, distance_sqr)
             };
 
-            let step_speed = speed * game_time.delta_time;
-            if step_speed > distance {
-                // complete
-                // vehicle.pos = arrival.target_pos;
-            } else {
-                let dir = delta.normalize();
-                vehicle.desired_vel += dir * speed * arrival.weight;
-                vehicle.desired_dir = dir;
-            }
+            let dir = delta.normalize();
+            vehicle.desired_vel += dir * speed * arrival.weight;
+            vehicle.desired_dir = dir;
         }
     }
 }
