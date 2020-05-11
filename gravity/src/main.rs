@@ -37,7 +37,7 @@ struct App {
 }
 
 impl App {
-    pub fn new(ctx: &mut Context) -> GameResult<App> {
+    pub fn new(_ctx: &mut Context) -> GameResult<App> {
         // create world
         let mut world = World::new();
         world.register::<Model>();
@@ -162,7 +162,7 @@ fn update_orbits(delta_time: f32, world: &mut World) {
                 a.force = a.force + force;
             }
 
-            let acc = (a.force / a.mass);
+            let acc = a.force / a.mass;
             a.vel += acc * delta_time;
             a.pos += a.vel * delta_time;
 

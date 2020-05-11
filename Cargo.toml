@@ -7,4 +7,5 @@ members = [
     "steering",
     "utils",
     "image-showcase",
+    "gridmap"
 ]
