@@ -1,7 +1,4 @@
-
-use cgmath::{
-    prelude::*, vec2, Deg, Euler, InnerSpace, Point2, Quaternion, Rad, Vector2, VectorSpace,
-};
+use cgmath::{prelude::*, Deg, InnerSpace, Point2, Quaternion, Rad, Vector2, VectorSpace};
 use ggez::conf::WindowMode;
 use ggez::event::{self, Button, EventHandler, KeyCode, KeyMods, MouseButton};
 use ggez::graphics::Color;
@@ -9,10 +6,10 @@ use ggez::{graphics, timer, Context, ContextBuilder, GameError, GameResult};
 use specs::prelude::*;
 use specs::{World, WorldExt};
 use specs_derive::Component;
-use steerning::math::*;
-use steerning::steerning::*;
-use steerning::steerning::components::*;
 use std::ops::Deref;
+use steerning::math::*;
+use steerning::steerning::components::*;
+use steerning::steerning::*;
 
 struct App {
     update_next: bool,
@@ -37,7 +34,6 @@ impl App {
         self.world = world;
         Ok(())
     }
-
 }
 
 fn draw_circle(
@@ -76,7 +72,6 @@ impl EventHandler for App {
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
         graphics::clear(ctx, graphics::BLACK);
 
-        let cfg = &self.world.read_resource::<Cfg>();
         let color_wall = Color::new(0.0, 1.0, 0.5, 0.5);
 
         {
@@ -129,24 +124,22 @@ impl EventHandler for App {
             }
         }
 
-        let text = graphics::Text::new(format!(
-            "ftps: {}",
-            ggez::timer::fps(ctx) as i32,
-        ));
+        {
+            let lines = take_debug_lines(&mut self.world);
+            for (a, b, color) in lines {
+                draw_line(ctx, a, b, color, 1.0);
+            }
+        }
+
+        let text = graphics::Text::new(format!("ftps: {}", ggez::timer::fps(ctx) as i32,));
         graphics::draw(ctx, &text, (cgmath::Point2::new(0.0, 0.0), graphics::WHITE))?;
 
         graphics::present(ctx)
     }
 
     fn mouse_button_up_event(&mut self, ctx: &mut Context, button: MouseButton, x: f32, y: f32) {
-        let mut arrival = self.world.write_component::<SteeringArrival>();
-        let formation = self.world.read_component::<SteeringFormationMember>();
-        for (formation, arrival) in (&formation, &mut arrival).join() {
-            // if formation.index != 0 {
-            //     continue;
-            // }
-
-            arrival.target_pos = (x, y).into();
+        if button == MouseButton::Left {
+            move_to(&mut self.world, Point2::new(x, y)).unwrap();
         }
     }
 

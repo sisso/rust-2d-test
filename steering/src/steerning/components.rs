@@ -1,7 +1,9 @@
 use crate::math::*;
 
-
-use cgmath::{prelude::*, Vector2, Point2, Deg, Rad};
+use cgmath::{prelude::*, Deg, Point2, Rad, Vector2};
+use ggez::graphics::Color;
+use ggez::{GameError, GameResult};
+use myelin_geometry::Polygon;
 use rand::prelude::StdRng;
 use rand::{thread_rng, Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
@@ -9,10 +11,6 @@ use specs::prelude::*;
 use specs::{World, WorldExt};
 use specs_derive::Component;
 use utils::lerp_2;
-use ggez::graphics::Color;
-use ggez::{GameError, GameResult};
-use myelin_geometry::Polygon;
-
 
 #[derive(Clone, Debug, Component, Serialize, Deserialize)]
 pub struct Cfg {
@@ -25,24 +23,26 @@ pub struct Cfg {
     pub max_speed: f32,
     pub rotation_speed: f32,
     pub separation_radius: f32,
-    pub start_position: [f32;4],
+    pub start_position: [f32; 4],
+    pub arrival_distance: f32,
 }
 
 impl Cfg {
-    pub fn new() -> Self {
-        Cfg {
-            screen_width: 0.0,
-            screen_height: 0.0,
-            seed: 0,
-            vehicles: 0,
-            followers: 0,
-            max_acc: 0.0,
-            max_speed: 0.0,
-            rotation_speed: 0.0,
-            separation_radius: 0.0,
-            start_position: [0.0, 0.0, 0.0, 0.0],
-        }
-    }
+    // pub fn new() -> Self {
+    //     Cfg {
+    //         screen_width: 0.0,
+    //         screen_height: 0.0,
+    //         seed: 0,
+    //         vehicles: 0,
+    //         followers: 0,
+    //         max_acc: 0.0,
+    //         max_speed: 0.0,
+    //         rotation_speed: 0.0,
+    //         separation_radius: 0.0,
+    //         start_position: [0.0, 0.0, 0.0, 0.0],
+    //         arrival_distance: 0.0
+    //     }
+    // }
 }
 
 #[derive(Clone, Debug, Component)]
@@ -57,6 +57,14 @@ impl DebugStuff {
             lines: Default::default(),
             circles: Default::default(),
         }
+    }
+
+    pub fn push_line(&mut self, a: P2, b: P2, color: Color) {
+        self.lines.push((a, b, color));
+    }
+
+    pub fn take_lines(&mut self) -> Vec<(P2, P2, Color)> {
+        std::mem::replace(&mut self.lines, vec![])
     }
 }
 
@@ -140,7 +148,7 @@ pub struct SteeringArrival {
 
 #[derive(Clone, Debug, Component)]
 pub struct SteeringFormationLeader {
-    pub formation: Option<Formation>,
+    pub formation: FormationType,
 }
 
 #[derive(Clone, Debug, Component)]
@@ -148,46 +156,42 @@ pub struct SteeringFormationMember {
     pub index: usize,
 }
 
-#[derive(Clone, Debug)]
-pub struct Formation {
-    pub pos: P2,
-    pub next: V2,
+#[derive(Clone, Debug, Copy)]
+pub enum FormationType {
+    Circle,
+    Bar,
+    Line,
+    Column,
 }
 
-// #[derive(Clone, Debug)]
-// enum FormationType {
-//     Circle,
-//     Bar,
-//     Line,
-//     Column
-// }
+impl FormationType {
+    // // TODO: formations need to be persistent between interaction to remove flackness
+    // pub fn new(leader_pos: P2, leader_vel: V2, target_pos: P2, total_members: usize) -> Self {
+    //     let mut right = Vector2::new(0.0, 15.0);
+    //
+    //     // let delta_to_target = target_pos - leader_pos;
+    //     // if delta_to_target.magnitude() > 1.0 {
+    //     //     let dir = delta_to_target.normalize();
+    //     //     right = rotate_vector(dir, right);
+    //     // }
+    //
+    //     let leader_speed = leader_vel.magnitude();
+    //     if leader_speed > 30.0 {
+    //         let dir = leader_vel / leader_speed;
+    //         right = rotate_vector(dir, right);
+    //     }
+    //
+    //     Formation {
+    //         pos: leader_pos + leader_vel,
+    //         next: right,
+    //     }
+    // }
 
-impl Formation {
-    // TODO: formations need to be persistent between interaction to remove flackness
-    pub fn new(leader_pos: P2, leader_vel: V2, target_pos: P2, total_members: usize) -> Self {
-        let mut right = Vector2::new(0.0, 15.0);
-
-        // let delta_to_target = target_pos - leader_pos;
-        // if delta_to_target.magnitude() > 1.0 {
-        //     let dir = delta_to_target.normalize();
-        //     right = rotate_vector(dir, right);
-        // }
-
-        let leader_speed = leader_vel.magnitude();
-        if leader_speed > 30.0 {
-            let dir = leader_vel / leader_speed;
-            right = rotate_vector(dir, right);
-        }
-
-        Formation {
-            pos: leader_pos + leader_vel,
-            next: right,
-        }
-    }
-
-    pub fn get_pos(&self, index: usize) -> P2 {
+    pub fn get_pos(&self, look_dir: V2, leader_pos: P2, total: usize, index: usize) -> P2 {
         let mult = if index % 2 == 0 { 1.0 } else { -1.0 };
-        self.pos + self.next * ((index / 2) as f32) * mult
+        let vec = Vector2::new(0.0, 20.0) * ((index / 2) as f32) * mult;
+        let rotated = rotate_vector(look_dir, vec);
+        leader_pos + rotated
     }
 }
 

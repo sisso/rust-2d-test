@@ -1,7 +1,10 @@
-use crate::math::*;
 use super::components::*;
+use crate::math::*;
 
-use cgmath::{prelude::*, Vector2, Point2, Deg, Rad};
+use cgmath::{prelude::*, Deg, Point2, Rad, Vector2};
+use ggez::graphics::Color;
+use ggez::{GameError, GameResult};
+use myelin_geometry::Polygon;
 use rand::prelude::StdRng;
 use rand::{thread_rng, Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
@@ -9,9 +12,6 @@ use specs::prelude::*;
 use specs::{World, WorldExt};
 use specs_derive::Component;
 use utils::lerp_2;
-use ggez::graphics::Color;
-use ggez::{GameError, GameResult};
-use myelin_geometry::Polygon;
 
 pub struct BordersTeleportSystem;
 impl<'a> System<'a> for BordersTeleportSystem {
@@ -68,13 +68,16 @@ impl<'a> System<'a> for SteeringSeparationSystem {
                 let distance = vector.magnitude();
 
                 if distance < min_distance {
-                    let vel = lerp_2(vehicle_a.max_speed * separation_a.weight, 0.0, 0.0, min_distance, distance);
+                    let vel = lerp_2(
+                        vehicle_a.max_speed * separation_a.weight,
+                        0.0,
+                        0.0,
+                        min_distance,
+                        distance,
+                    );
                     let vector = vector.normalize() * -1.0;
 
-                    changes.push((
-                        entity_a,
-                        vector * vel,
-                    ));
+                    changes.push((entity_a, vector * vel));
                 }
             }
         }
@@ -117,7 +120,7 @@ impl<'a> System<'a> for SteeringWallsSystem {
         for (vehicle) in (&mut vehicles).join() {
             for (wall) in (&walls).join() {
                 if let Some(vector) =
-                compute_vector_from_point_to_segment(wall.pos, wall.vec, vehicle.pos)
+                    compute_vector_from_point_to_segment(wall.pos, wall.vec, vehicle.pos)
                 {
                     let distance = vector.magnitude();
                     if distance < wall.min_distance {
@@ -197,11 +200,12 @@ impl<'a> System<'a> for SteerArrivalSystem {
     type SystemData = (
         WriteStorage<'a, Vehicle>,
         WriteStorage<'a, SteeringArrival>,
+        WriteExpect<'a, DebugStuff>,
     );
 
-    fn run(&mut self, (mut mobs, mut steering_arrival): Self::SystemData) {
+    fn run(&mut self, (mut mobs, mut steering_arrival, mut debug_stuff): Self::SystemData) {
         use specs::Join;
-        let min_distance_sqr = 0.1 * 0.1;
+        let min_distance = 0.1;
 
         for (vehicle, arrival) in (&mut mobs, &mut steering_arrival).join() {
             let arrival: &mut SteeringArrival = arrival;
@@ -211,23 +215,32 @@ impl<'a> System<'a> for SteerArrivalSystem {
 
             let vehicle: &mut Vehicle = vehicle;
             let delta = arrival.target_pos - vehicle.pos;
-            let distance_sqr: f32 = delta.magnitude2();
-            if !distance_sqr.is_normal() || distance_sqr < min_distance_sqr {
+            let distance: f32 = delta.magnitude();
+            if !distance.is_normal() || distance < min_distance {
                 // arrival
                 arrival.arrived = true;
                 continue;
             }
             arrival.arrived = false;
 
-            let speed = if distance_sqr > (arrival.distance * arrival.distance) {
+            let dir = delta / distance;
+
+            let slowdown_distance = vehicle.max_speed * arrival.distance;
+
+            let speed = if distance > slowdown_distance {
+                vehicle.desired_dir = dir;
                 vehicle.max_speed
             } else {
-                lerp_2(0.0, vehicle.max_speed, 0.0, arrival.distance, distance_sqr)
+                lerp_2(0.0, vehicle.max_speed, 0.0, slowdown_distance, distance)
             };
 
-            let dir = delta.normalize();
-            vehicle.desired_vel += dir * speed * arrival.weight;
-            vehicle.desired_dir = dir;
+            let desired_vel = dir * speed * arrival.weight;
+            debug_stuff.push_line(
+                vehicle.pos,
+                vehicle.pos + desired_vel,
+                Color::new(1.0, 1.0, 0.0, 1.0),
+            );
+            vehicle.desired_vel += desired_vel;
         }
     }
 }
@@ -248,20 +261,20 @@ impl<'a> System<'a> for SteeringFormationSystem {
         let mut followers = BitSet::new();
         let mut total_followers = 0;
 
-        for (e, v, f, a) in (&entities, &vehicles, &formations, &arrivals).join() {
-            if f.index == 0 {
-                leader = Some((v.pos, v.get_velocity(), a.target_pos));
-            } else {
-                followers.add(e.id());
-                total_followers += 1;
-            }
-        }
-
-        let (leader_pos, leader_vel, leader_target_pos) = leader.unwrap();
-        let formation = Formation::new(leader_pos, leader_vel, leader_target_pos, total_followers);
-        for (_e, a, f) in (followers, &mut arrivals, &formations).join() {
-            a.target_pos = formation.get_pos(f.index);
-        }
+        // for (e, v, f, a) in (&entities, &vehicles, &formations, &arrivals).join() {
+        //     if f.index == 0 {
+        //         leader = Some((v.pos, v.get_velocity(), a.target_pos));
+        //     } else {
+        //         followers.add(e.id());
+        //         total_followers += 1;
+        //     }
+        // }
+        //
+        // let (leader_pos) = leader.unwrap();
+        // let formation =
+        // for (_e, a, f) in (followers, &mut arrivals, &formations).join() {
+        //     a.target_pos = formation.get_pos(f.index);
+        // }
     }
 }
 
@@ -277,4 +290,3 @@ impl<'a> System<'a> for UpdateModelPosSystem {
         }
     }
 }
-

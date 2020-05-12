@@ -6,13 +6,13 @@ use systems::*;
 
 use crate::math::*;
 
-use cgmath::{prelude::*, Vector2, Point2, Deg, Rad};
-use rand::prelude::StdRng;
-use rand::{thread_rng, Rng, SeedableRng};
-use specs::prelude::*;
-use specs::{World, WorldExt};
+use cgmath::{prelude::*, Deg, Point2, Vector2};
 use ggez::graphics::Color;
 use ggez::{GameError, GameResult};
+use rand::prelude::StdRng;
+use rand::{Rng, SeedableRng};
+use specs::prelude::*;
+use specs::{World, WorldExt};
 
 // #[derive(Debug, Clone)]
 // enum Error {
@@ -145,8 +145,7 @@ pub fn initialize_world(world: &mut World) -> GameResult<()> {
             Color::new(1.0, 0.0, 0.0, 1.0)
         };
 
-        let dir =
-            rotate_vector_by_angle(Vector2::unit_y(), Deg(rng.gen_range(0.0, 360.0)).into());
+        let dir = rotate_vector_by_angle(Vector2::unit_y(), Deg(rng.gen_range(0.0, 360.0)).into());
 
         let mut builder = world
             .create_entity()
@@ -170,9 +169,9 @@ pub fn initialize_world(world: &mut World) -> GameResult<()> {
             .with(SteeringArrival {
                 enabled: follow,
                 target_pos: Point2::new(300.0, 300.0),
-                distance: 50.0,
+                distance: cfg.arrival_distance,
                 weight: 1.0,
-                arrived: false
+                arrived: false,
             })
             .with(SteeringSeparation {
                 enabled: true,
@@ -187,7 +186,9 @@ pub fn initialize_world(world: &mut World) -> GameResult<()> {
 
         if follow {
             if formation_index == 0 {
-                builder = builder.with(SteeringFormationLeader { formation: None });
+                builder = builder.with(SteeringFormationLeader {
+                    formation: FormationType::Line,
+                });
             }
 
             builder = builder.with(SteeringFormationMember {
@@ -230,3 +231,36 @@ pub fn run(delta: f32, world: &mut World) {
     dispatcher.run_now(world);
 }
 
+pub fn move_to(world: &mut World, target_pos: P2) -> GameResult<()> {
+    let mut arrivals = world.write_component::<SteeringArrival>();
+    let formations = world.read_component::<SteeringFormationMember>();
+    let leaders = world.read_component::<SteeringFormationLeader>();
+    let vehicles = world.read_component::<Vehicle>();
+
+    let mut total = formations.count();
+    let mut formation: Option<(P2, FormationType)> = None;
+
+    // get leader position
+    for (leader, vehicle) in (&leaders, &vehicles).join() {
+        let pos = vehicle.pos;
+        formation = Some((pos, leader.formation));
+    }
+
+    let (leader_pos, leader_formation) = formation.unwrap();
+
+    let dir = (target_pos - leader_pos).normalize();
+
+    // update target positions
+    for (formation, arrival) in (&formations, &mut arrivals).join() {
+        let index = formation.index;
+        let pos = leader_formation.get_pos(dir, target_pos, total, index);
+        arrival.target_pos = pos;
+    }
+
+    Ok(())
+}
+
+pub fn take_debug_lines(world: &mut World) -> Vec<(P2, P2, Color)> {
+    let stuff = &mut world.write_resource::<DebugStuff>();
+    stuff.take_lines()
+}
