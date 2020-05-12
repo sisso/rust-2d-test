@@ -5,7 +5,7 @@ opt-level = 1
 members = [
     "gravity",
     "steering",
-    "utils",
+    "commons",
     "image-showcase",
     "gridmap"
 ]

@@ -1,4 +1,5 @@
 use cgmath::{prelude::*, vec2, vec3, Deg, Euler, Quaternion, Rad, Vector2, VectorSpace};
+use commons::math::lerp_2;
 use ggez::conf::WindowMode;
 use ggez::event::{self, EventHandler, KeyCode, KeyMods};
 use ggez::{graphics, timer, Context, ContextBuilder, GameResult};
@@ -7,7 +8,6 @@ use obj::raw::object::Point;
 use obj::{load_obj, Obj, Position};
 use std::fs::File;
 use std::io::BufReader;
-use utils::lerp_2;
 
 const WIDTH: f32 = 1600.0;
 const HEIGHT: f32 = 1200.0;

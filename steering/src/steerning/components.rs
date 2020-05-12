@@ -1,6 +1,7 @@
 use crate::math::*;
 
 use cgmath::{prelude::*, Deg, Point2, Rad, Vector2};
+use commons::math::lerp_2;
 use ggez::graphics::Color;
 use ggez::{GameError, GameResult};
 use myelin_geometry::Polygon;
@@ -10,7 +11,6 @@ use serde::{Deserialize, Serialize};
 use specs::prelude::*;
 use specs::{World, WorldExt};
 use specs_derive::Component;
-use utils::lerp_2;
 
 #[derive(Clone, Debug, Component, Serialize, Deserialize)]
 pub struct Cfg {
