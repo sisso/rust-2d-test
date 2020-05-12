@@ -4,7 +4,7 @@ mod systems;
 use components::*;
 use systems::*;
 
-use crate::math::*;
+use commons::math::*;
 
 use cgmath::{prelude::*, Deg, Point2, Vector2};
 use ggez::graphics::Color;

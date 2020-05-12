@@ -1,8 +1,7 @@
 use super::components::*;
-use crate::math::*;
 
 use cgmath::{prelude::*, Deg, Point2, Rad, Vector2};
-use commons::math::lerp_2;
+use commons::math::*;
 use ggez::graphics::Color;
 use ggez::{GameError, GameResult};
 use myelin_geometry::Polygon;
