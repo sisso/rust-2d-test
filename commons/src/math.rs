@@ -1,3 +1,8 @@
+use cgmath::{prelude::*, Point2, Vector2, VectorSpace};
+
+pub type P2 = Point2<f32>;
+pub type V2 = Vector2<f32>;
+
 /// returns the value between v0 and v1 on t
 pub fn lerp(v0: f32, v1: f32, t: f32) -> f32 {
     v0 + clamp01(t) * (v1 - v0)
