@@ -188,8 +188,16 @@ impl FormationType {
     // }
 
     pub fn get_pos(&self, look_dir: V2, leader_pos: P2, total: usize, index: usize) -> P2 {
-        let mult = if index % 2 == 0 { 1.0 } else { -1.0 };
-        let vec = Vector2::new(0.0, 20.0) * ((index / 2) as f32) * mult;
+        if index == 0 {
+            return leader_pos;
+        }
+
+        let mult = if (index) % 2 == 0 {
+            index as f32 / 2.0
+        } else {
+            -1.0 * index as f32 / 2.0
+        };
+        let vec = Vector2::new(0.0, 20.0) * mult;
         let rotated = rotate_vector(look_dir, vec);
         leader_pos + rotated
     }

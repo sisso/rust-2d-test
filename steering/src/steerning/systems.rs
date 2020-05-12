@@ -240,7 +240,7 @@ impl<'a> System<'a> for SteerArrivalSystem {
                 vehicle.pos + desired_vel,
                 Color::new(1.0, 1.0, 0.0, 1.0),
             );
-            vehicle.desired_vel += desired_vel;
+            vehicle.desired_vel += desired_vel - vehicle.get_velocity();
         }
     }
 }
