@@ -1,5 +1,23 @@
-#[derive(Debug, Clone)]
-pub struct Cfg {}
+use ggez::GameResult;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ComponentCfg {
+    pub code: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Cfg {
+    components: Vec<ComponentCfg>,
+}
+
+impl Cfg {
+    pub fn load(file_path: &str) -> GameResult<Cfg> {
+        let body = std::fs::read_to_string(file_path).unwrap();
+        let cfg: Cfg = serde_json::from_str(body.as_str()).unwrap();
+        Ok(cfg)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum Error {
@@ -64,7 +82,7 @@ pub struct ShipDesign {
 impl ShipDesign {
     pub fn new() -> Self {
         ShipDesign {
-            size: Size::new(10, 4),
+            size: Size::new(20, 8),
             components: vec![],
         }
     }
@@ -78,10 +96,17 @@ impl ShipDesign {
     }
 }
 
-pub struct Repository {}
+#[derive(Debug, Clone)]
+pub struct Repository {
+    cfg: Cfg,
+}
 
 impl Repository {
-    pub fn list_components(&self) -> Vec<ComponentAt> {
-        unimplemented!();
+    pub fn new(cfg: Cfg) -> Self {
+        Repository { cfg }
+    }
+
+    pub fn list_components<'a>(&'a self) -> impl Iterator<Item = &'a ComponentCfg> + 'a {
+        self.cfg.components.iter()
     }
 }

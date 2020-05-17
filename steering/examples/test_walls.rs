@@ -2,6 +2,7 @@ extern crate steerning;
 use steerning::*;
 
 use cgmath::{prelude::*, vec2, EuclideanSpace, Point2, Vector2, VectorSpace};
+use commons::math::*;
 use geo::Point;
 use ggez::conf::WindowMode;
 use ggez::event::{self, EventHandler, KeyCode, KeyMods, MouseButton};
@@ -9,7 +10,6 @@ use ggez::graphics::Color;
 use ggez::{graphics, timer, Context, ContextBuilder, GameResult};
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
-use crate::math::*;
 
 const WIDTH: f32 = 800.0;
 const HEIGHT: f32 = 600.0;

@@ -1,4 +1,5 @@
 use cgmath::{prelude::*, Deg, InnerSpace, Point2, Quaternion, Rad, Vector2, VectorSpace};
+use commons::math::*;
 use ggez::conf::WindowMode;
 use ggez::event::{self, Button, EventHandler, KeyCode, KeyMods, MouseButton};
 use ggez::graphics::Color;
@@ -7,7 +8,6 @@ use specs::prelude::*;
 use specs::{World, WorldExt};
 use specs_derive::Component;
 use std::ops::Deref;
-use steerning::math::*;
 use steerning::steerning::components::*;
 use steerning::steerning::*;
 

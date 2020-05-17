@@ -19,7 +19,7 @@ pub struct GuiButton {
 }
 
 impl GuiButton {
-    fn draw(&self, ctx: &mut Context) -> GameResult<()> {
+    pub fn draw(&self, ctx: &mut Context) -> GameResult<()> {
         let mut builder = graphics::MeshBuilder::new();
 
         let color = if self.click {

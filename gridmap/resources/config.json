@@ -1,0 +1,21 @@
+{
+  "gui": {
+
+  },
+  "game": {
+    "components": [
+      {
+        "code": "engine"
+      },
+      {
+        "code": "corridor"
+      },
+      {
+        "code": "cockpit"
+      },
+      {
+        "code": "airlock"
+      }
+    ]
+  }
+}
