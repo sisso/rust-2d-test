@@ -1,6 +1,6 @@
 {
   "gui": {
-
+    "cell_size": 15.0
   },
   "game": {
     "components": [

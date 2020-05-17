@@ -10,22 +10,24 @@ use serde_json::Value;
 
 const WIDTH: f32 = 800.0;
 const HEIGHT: f32 = 600.0;
-const CELL_SIZE: f32 = 15.0;
 
 type P2 = cgmath::Point2<f32>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct AppCfg {}
+struct AppCfg {
+    cell_size: f32,
+}
 
 #[derive(Debug)]
 struct Gui {
     bottom_panel: commons::graphics::GuiManage,
+    selected_component: Option<usize>,
 }
 
 #[derive(Debug)]
 struct App {
     cfg: AppCfg,
-    screen_size: Rect,
+    editor_area: Rect,
     design: ShipDesign,
     repository: Repository,
     gui: Gui,
@@ -41,15 +43,44 @@ impl App {
 
         let gui = Gui {
             bottom_panel: buttons,
+            selected_component: None,
         };
 
         Ok(App {
             cfg: app_cfg,
-            screen_size: graphics::screen_coordinates(ctx),
+            editor_area: graphics::screen_coordinates(ctx),
             design: ShipDesign::new(),
             repository,
             gui: gui,
         })
+    }
+
+    fn click_draw_grid(&mut self, ctx: &mut Context, pos: P2) -> GameResult<()> {
+        let component = {
+            if let Some(component) = self
+                .gui
+                .selected_component
+                .map(|index| self.repository.list_components().nth(index))
+                .flatten()
+            {
+                component
+            } else {
+                return Ok(());
+            }
+        };
+
+        let grid_pos = self.get_grid_pos(ctx, pos)?;
+        println!("{:?}", grid_pos);
+
+        Ok(())
+    }
+
+    fn get_grid_pos(&self, ctx: &mut Context, pos: P2) -> GameResult<P2> {
+        let local_pos = pos + Vector2::new(self.editor_area.x, self.editor_area.y);
+        // TODO: scale
+        let index_x = local_pos.x / self.cfg.cell_size;
+        let index_y = local_pos.y / self.cfg.cell_size;
+        Ok(Point2::new(index_x, index_y))
     }
 }
 
@@ -114,11 +145,11 @@ impl EventHandler for App {
 
         // screen
         {
-            graphics::set_screen_coordinates(ctx, self.screen_size);
+            graphics::set_screen_coordinates(ctx, self.editor_area);
             draw_grid(
                 ctx,
-                Point2::new(80.0, 80.0),
-                CELL_SIZE,
+                Point2::new(0.0, 0.0),
+                self.cfg.cell_size,
                 self.design.size.width,
                 self.design.size.height,
             )?;
@@ -149,21 +180,27 @@ impl EventHandler for App {
     }
 
     fn mouse_button_up_event(&mut self, ctx: &mut Context, button: MouseButton, x: f32, y: f32) {
+        let pos = Point2::new(x, y);
+
         if button == MouseButton::Left {
-            self.gui.bottom_panel.on_mouse_up(Point2::new(x, y));
+            if let Some(id) = self.gui.bottom_panel.on_mouse_up(pos) {
+                self.gui.selected_component = Some(id as usize);
+            } else {
+                self.click_draw_grid(ctx, pos).unwrap();
+            }
         }
     }
 
     fn mouse_motion_event(&mut self, ctx: &mut Context, x: f32, y: f32, dx: f32, dy: f32) {
         if ggez::input::mouse::button_pressed(ctx, MouseButton::Right) {
-            move_screen(&mut self.screen_size, Vector2::new(-dx, -dy));
+            move_screen(&mut self.editor_area, Vector2::new(-dx, -dy));
         } else {
             self.gui.bottom_panel.on_mouse_move(Point2::new(x, y));
         }
     }
 
     fn mouse_wheel_event(&mut self, ctx: &mut Context, _x: f32, y: f32) {
-        zoom_screen(&mut self.screen_size, -y);
+        zoom_screen(&mut self.editor_area, -y);
     }
 
     fn key_down_event(
@@ -177,16 +214,16 @@ impl EventHandler for App {
 
         match keycode {
             KeyCode::W => {
-                move_screen(&mut self.screen_size, Vector2::new(0.0, -screen_speed));
+                move_screen(&mut self.editor_area, Vector2::new(0.0, -screen_speed));
             }
             KeyCode::S => {
-                move_screen(&mut self.screen_size, Vector2::new(0.0, screen_speed));
+                move_screen(&mut self.editor_area, Vector2::new(0.0, screen_speed));
             }
             KeyCode::A => {
-                move_screen(&mut self.screen_size, Vector2::new(screen_speed, 0.0));
+                move_screen(&mut self.editor_area, Vector2::new(screen_speed, 0.0));
             }
             KeyCode::D => {
-                move_screen(&mut self.screen_size, Vector2::new(-screen_speed, 0.0));
+                move_screen(&mut self.editor_area, Vector2::new(-screen_speed, 0.0));
             }
             _ => {}
         }
