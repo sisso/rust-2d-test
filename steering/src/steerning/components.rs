@@ -1,9 +1,9 @@
 use commons::math::*;
 
-use cgmath::{prelude::*, Deg, Point2, Rad, Vector2};
 use ggez::graphics::Color;
 use ggez::{GameError, GameResult};
 use myelin_geometry::Polygon;
+use nalgebra::{Point2, Vector2};
 use rand::prelude::StdRng;
 use rand::{thread_rng, Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
@@ -112,7 +112,7 @@ impl Vehicle {
     }
 
     pub fn rotate_towards_vec(&mut self, vec: V2, delta_time: f32) {
-        self.dir = rotate_towards(self.dir, vec, Rad(self.rotation_speed * delta_time));
+        self.dir = rotate_towards(self.dir, vec, self.rotation_speed * delta_time);
     }
 }
 
@@ -196,9 +196,9 @@ impl FormationType {
         } else {
             -1.0 * index as f32 / 2.0
         };
-        let vec = Vector2::new(0.0, 20.0) * mult;
+        let vec = Point2::new(0.0, 20.0 * mult);
         let rotated = rotate_vector(look_dir, vec);
-        leader_pos + rotated
+        leader_pos + rotated.coords
     }
 }
 
@@ -221,7 +221,7 @@ pub struct Wall {
 
 impl Wall {
     pub fn new_from_points(p0: P2, p1: P2, min_distance: f32, force: V2) -> Self {
-        let vec = p1.to_vec() - p0.to_vec();
+        let vec = p1.coords - p0.clone().coords;
         Wall {
             pos: p0,
             vec: vec,

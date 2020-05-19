@@ -1,9 +1,9 @@
-use cgmath::{prelude::*, vec2, vec3, Deg, Euler, Quaternion, Rad, Vector2, VectorSpace};
-use commons::math::lerp_2;
+use commons::math::{lerp_2, p2};
 use ggez::conf::WindowMode;
 use ggez::event::{self, EventHandler, KeyCode, KeyMods};
 use ggez::{graphics, timer, Context, ContextBuilder, GameResult};
 use itertools::Itertools;
+use nalgebra::{Point2, Vector2};
 use obj::raw::object::Point;
 use obj::{load_obj, Obj, Position};
 use std::fs::File;
@@ -14,7 +14,7 @@ const HEIGHT: f32 = 1200.0;
 
 struct App {
     obj: Obj<Position>,
-    pos: cgmath::Point2<f32>,
+    pos: Point2<f32>,
     scale: f32,
     disply_points: bool,
 }
@@ -26,7 +26,7 @@ impl App {
 
         let game = App {
             obj,
-            pos: cgmath::Point2::new(65.0, 32.0),
+            pos: Point2::new(65.0, 32.0),
             scale: 14.0,
             disply_points: false,
         };
@@ -42,8 +42,8 @@ impl EventHandler for App {
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
         graphics::clear(ctx, graphics::BLACK);
 
-        fn convert(coords: [f32; 3]) -> cgmath::Point2<f32> {
-            (coords[0], coords[2]).into()
+        fn convert(coords: [f32; 3]) -> Point2<f32> {
+            p2(coords[0], coords[2])
         }
 
         // TOOD this is just horrible, simplify
@@ -57,7 +57,7 @@ impl EventHandler for App {
 
             let mut vertices = [v0, v1, v2, v0];
             for i in 0..vertices.len() {
-                vertices[i] += self.pos.to_vec();
+                vertices[i] += self.pos.coords.clone();
                 vertices[i] *= self.scale;
             }
 
@@ -85,7 +85,7 @@ impl EventHandler for App {
         }
 
         let text = graphics::Text::new(format!("pos: {:?} scale {:?}", self.pos, self.scale));
-        graphics::draw(ctx, &text, (cgmath::Point2::new(0.0, 0.0), graphics::WHITE))?;
+        graphics::draw(ctx, &text, (Point2::new(0.0, 0.0), graphics::WHITE))?;
 
         graphics::present(ctx)
     }

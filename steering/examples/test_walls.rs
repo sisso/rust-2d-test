@@ -1,13 +1,13 @@
 extern crate steerning;
 use steerning::*;
 
-use cgmath::{prelude::*, vec2, EuclideanSpace, Point2, Vector2, VectorSpace};
 use commons::math::*;
 use geo::Point;
 use ggez::conf::WindowMode;
 use ggez::event::{self, EventHandler, KeyCode, KeyMods, MouseButton};
 use ggez::graphics::Color;
 use ggez::{graphics, timer, Context, ContextBuilder, GameResult};
+use nalgebra::{Point2, Vector2};
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 
@@ -39,7 +39,7 @@ impl App {
             for i in 0..10 {
                 let wall = Wall {
                     pos: Point2::new(rng.gen_range(0.0, WIDTH), rng.gen_range(0.0, HEIGHT)),
-                    vec: vec2(rng.gen_range(0.0, WIDTH), rng.gen_range(0.0, HEIGHT)),
+                    vec: v2(rng.gen_range(0.0, WIDTH), rng.gen_range(0.0, HEIGHT)),
                     min_distance: 50.0,
                 };
 
@@ -86,10 +86,10 @@ impl EventHandler for App {
             draw_line(
                 ctx,
                 wall.pos,
-                Point2::from_vec(wall.vec + wall.pos.to_vec()),
+                Point2::from(wall.vec + wall.pos.coords.clone()),
                 wall_color,
                 1.0,
-            );
+            )?;
         }
 
         {
@@ -116,7 +116,7 @@ impl EventHandler for App {
                         proj_hit_color
                     };
 
-                    draw_line(ctx, self.point, self.point + vec, color, 1.0);
+                    draw_line(ctx, self.point, self.point + vec, color, 1.0)?;
                 }
             }
         }

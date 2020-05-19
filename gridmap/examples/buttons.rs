@@ -1,9 +1,10 @@
-use cgmath::{prelude::*, Point2, Vector2, VectorSpace};
 use commons::graphics::{GuiButton, GuiManage};
+use commons::math::{p2, v2, P2, V2};
 use ggez::conf::WindowMode;
 use ggez::event::{self, EventHandler, KeyCode, KeyMods, MouseButton};
 use ggez::graphics::{Color, DrawMode, DrawParam, Rect};
 use ggez::{graphics, Context, ContextBuilder, GameResult};
+use nalgebra::{Point2, Vector2};
 
 const WIDTH: f32 = 800.0;
 const HEIGHT: f32 = 600.0;

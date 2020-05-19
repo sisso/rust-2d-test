@@ -1,14 +1,13 @@
-use cgmath::{prelude::*, vec2, VectorSpace, Point2};
 use ggez::conf::WindowMode;
 use ggez::event::{self, EventHandler, KeyCode, KeyMods};
 use ggez::{graphics, timer, Context, ContextBuilder, GameResult};
+use nalgebra::{Point2, Vector2};
 
 const WIDTH: f32 = 800.0;
 const HEIGHT: f32 = 600.0;
 
 #[derive(Debug)]
-struct App {
-}
+struct App {}
 
 impl App {
     pub fn new(ctx: &mut Context) -> GameResult<App> {
@@ -45,9 +44,7 @@ fn main() -> GameResult<()> {
 
     // Run!
     match event::run(&mut ctx, &mut event_loop, &mut app) {
-        Ok(_) => {
-            Ok(())
-        }
+        Ok(_) => Ok(()),
         Err(e) => {
             println!("Error occured: {}", e);
             Err(e)

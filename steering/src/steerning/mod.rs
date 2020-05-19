@@ -6,9 +6,9 @@ use systems::*;
 
 use commons::math::*;
 
-use cgmath::{prelude::*, Deg, Point2, Vector2};
 use ggez::graphics::Color;
 use ggez::{GameError, GameResult};
+use nalgebra::Vector2;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use specs::prelude::*;
@@ -66,10 +66,10 @@ pub fn initialize_world(world: &mut World) -> GameResult<()> {
         let (width, height) = (cfg.screen_width, cfg.screen_height);
         let border = 80.0;
         let points: Vec<P2> = vec![
-            (border, border).into(),
-            (width - border, border).into(),
-            (width - border, height - border).into(),
-            (border, height - border).into(),
+            p2(border, border),
+            p2(width - border, border),
+            p2(width - border, height - border),
+            p2(border, height - border),
         ];
 
         // world.insert(MovingArea {
@@ -80,33 +80,13 @@ pub fn initialize_world(world: &mut World) -> GameResult<()> {
         let wall_force = 200.0;
 
         for (p0, p1, distance, force) in vec![
-            (
-                points[0],
-                points[1],
-                wall_width,
-                Vector2::new(0.0, 1.0) * wall_force,
-            ),
-            (
-                points[1],
-                points[2],
-                wall_width,
-                Vector2::new(-1.0, 0.0) * wall_force,
-            ),
-            (
-                points[2],
-                points[3],
-                wall_width,
-                Vector2::new(0.0, -1.0) * wall_force,
-            ),
-            (
-                points[3],
-                points[0],
-                wall_width,
-                Vector2::new(1.0, 0.0) * wall_force,
-            ),
+            (points[0], points[1], wall_width, v2(0.0, 1.0) * wall_force),
+            (points[1], points[2], wall_width, v2(-1.0, 0.0) * wall_force),
+            (points[2], points[3], wall_width, v2(0.0, -1.0) * wall_force),
+            (points[3], points[0], wall_width, v2(1.0, 0.0) * wall_force),
         ] {
-            let p0 = Point2::new(p0.x as f32, p0.y as f32);
-            let p1 = Point2::new(p1.x as f32, p1.y as f32);
+            let p0 = p2(p0.x as f32, p0.y as f32);
+            let p1 = p2(p1.x as f32, p1.y as f32);
 
             world
                 .create_entity()
@@ -122,12 +102,12 @@ pub fn initialize_world(world: &mut World) -> GameResult<()> {
     let mut formation_index = 0;
 
     for i in 0..cfg.vehicles {
-        let pos = Point2::new(
+        let pos = p2(
             rng.gen_range(cfg.start_position[0], cfg.start_position[2]),
             rng.gen_range(cfg.start_position[1], cfg.start_position[3]),
         );
 
-        let vel = Vector2::new(
+        let vel = v2(
             rng.gen_range(-max_speed, max_speed),
             rng.gen_range(-max_speed, max_speed),
         );
@@ -145,7 +125,7 @@ pub fn initialize_world(world: &mut World) -> GameResult<()> {
             Color::new(1.0, 0.0, 0.0, 1.0)
         };
 
-        let dir = rotate_vector_by_angle(Vector2::unit_y(), Deg(rng.gen_range(0.0, 360.0)).into());
+        let dir = Vector2::new(rng.gen(), rng.gen()).normalize();
 
         let mut builder = world
             .create_entity()
@@ -153,22 +133,22 @@ pub fn initialize_world(world: &mut World) -> GameResult<()> {
                 pos,
                 dir: dir,
                 desired_dir: dir,
-                vel_dir: Vector2::zero(),
+                vel_dir: Vector2::zeros(),
                 speed: 0.0,
                 max_acc: max_acc,
                 rotation_speed: deg2rad(cfg.rotation_speed),
-                desired_vel: Vector2::zero(),
+                desired_vel: Vector2::zeros(),
                 max_speed,
             })
             .with(Model {
                 size: radius,
-                pos: Point2::new(0.0, 0.0),
+                pos: p2(0.0, 0.0),
                 dir,
                 color,
             })
             .with(SteeringArrival {
                 enabled: follow,
-                target_pos: Point2::new(300.0, 300.0),
+                target_pos: p2(300.0, 300.0),
                 distance: cfg.arrival_distance,
                 weight: 1.0,
                 arrived: false,

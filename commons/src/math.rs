@@ -1,11 +1,26 @@
-use cgmath::{
-    assert_relative_eq, prelude::*, Deg, Euler, InnerSpace, Matrix3, Matrix4, Point2, Point3,
-    Quaternion, Rad, Transform as CTransform, Vector2, Vector3, VectorSpace,
-};
+use approx::assert_relative_eq;
+use nalgebra::{self as na, Point2, Rotation2, Similarity2, Vector2};
 
 pub type P2 = Point2<f32>;
 pub type V2 = Vector2<f32>;
-pub type Transform = Matrix4<f32>;
+pub const PI: f32 = std::f32::consts::PI;
+
+pub fn v2(x: f32, y: f32) -> V2 {
+    Vector2::new(x, y)
+}
+
+pub fn p2(x: f32, y: f32) -> P2 {
+    Point2::new(x, y)
+}
+
+#[derive(Debug, Clone)]
+pub struct Transform {}
+
+impl Transform {
+    pub fn new() -> Self {
+        Transform {}
+    }
+}
 
 /// returns the value between v0 and v1 on t
 pub fn lerp(v0: f32, v1: f32, t: f32) -> f32 {
@@ -54,33 +69,23 @@ mod test {
     }
 }
 
-pub fn rotate_vector(dir: V2, point: V2) -> V2 {
-    let angle = dir.y.atan2(dir.x);
-
-    let qt = Quaternion::from(Euler {
-        x: Rad(0.0),
-        y: Rad(0.0),
-        z: Rad(angle),
-    });
-
-    let pointv3 = Vector3::new(point.x, point.y, 0.0);
-    let rotated = qt * pointv3;
-    Vector2::new(rotated.x, rotated.y)
+pub fn angle_vector(v: V2) -> f32 {
+    v.y.atan2(v.x)
 }
 
-pub fn rotate_vector_by_angle(vec: V2, angle: Rad<f32>) -> V2 {
-    let qt = Quaternion::from(Euler {
-        x: Rad(0.0),
-        y: Rad(0.0),
-        z: angle,
-    });
-
-    let pointv3 = Vector3::new(vec.x, vec.y, 0.0);
-    let rotated = qt * pointv3;
-    Vector2::new(rotated.x, rotated.y)
+// TODO: remove?
+pub fn rotate_vector(dir: V2, point: P2) -> P2 {
+    let angle = angle_vector(dir);
+    rotate_vector_by_angle(point, angle)
 }
 
-pub fn rotate_towards(vec: V2, dir: V2, max_angle: Rad<f32>) -> V2 {
+// TODO: remove?
+pub fn rotate_vector_by_angle(point: P2, angle: f32) -> P2 {
+    let rotation = Rotation2::new(angle);
+    rotation * point
+}
+
+pub fn rotate_towards(vec: V2, dir: V2, max_angle: f32) -> V2 {
     let current_angle = vec.y.atan2(vec.x);
     let target_angle = dir.y.atan2(dir.x);
 
@@ -96,22 +101,22 @@ pub fn rotate_towards(vec: V2, dir: V2, max_angle: Rad<f32>) -> V2 {
         delta += pi2;
     }
 
-    if delta > max_angle.0 {
-        delta = max_angle.0;
-    } else if delta < -max_angle.0 {
-        delta = -max_angle.0;
+    if delta > max_angle {
+        delta = max_angle;
+    } else if delta < -max_angle {
+        delta = -max_angle;
     }
 
     let new_angle = current_angle + delta;
-    Vector2::new(new_angle.cos(), new_angle.sin())
+    v2(new_angle.cos(), new_angle.sin())
 }
 
 pub fn rad2deg(value: f32) -> f32 {
-    Deg::from(Rad(value)).0
+    180.0 * (value / PI)
 }
 
 pub fn deg2rad(value: f32) -> f32 {
-    Rad::from(Deg(value)).0
+    (value / 180.0) * PI
 }
 
 /// compute a vector that go from the point to the segment
@@ -119,8 +124,8 @@ pub fn compute_vector_from_point_to_segment(pos: P2, vec: V2, point: P2) -> Opti
     let proj = line_segment_project_percent(pos, vec, point);
     // println!("{:?}", proj);
     if proj >= 0.0 && proj <= 1.0 {
-        let segment_point: V2 = vec * proj + pos.to_vec();
-        let vector = segment_point - point.to_vec();
+        let segment_point: V2 = proj * vec + pos.coords;
+        let vector = segment_point - point.coords;
         // println!("{:?}", proj_v);
         Some(vector)
     } else {
@@ -132,13 +137,13 @@ pub fn compute_vector_from_point_to_segment(pos: P2, vec: V2, point: P2) -> Opti
 // http://sites.science.oregonstate.edu/math/home/programs/undergrad/CalculusQuestStudyGuides/vcalc/dotprod/dotprod.html
 pub fn line_segment_project(pos: P2, vec: V2, point: P2) -> V2 {
     // multiply the proportion of the projection into the segment vector and add initial position
-    vec * line_segment_project_percent(pos, vec, point) + pos.to_vec()
+    vec * line_segment_project_percent(pos, vec, point) + pos.coords
 }
 
 /// return percentage of segment the point belong, < 0 for before, > 1 for after
 pub fn line_segment_project_percent(pos: P2, vec: V2, point: P2) -> f32 {
     let line_mag = vec.magnitude();
-    vec.dot(point - pos) / (line_mag * line_mag)
+    vec.dot(&(point.coords - pos.coords)) * (1.0 / (line_mag * line_mag))
 }
 
 #[test]
@@ -146,7 +151,7 @@ fn test_segement_projection() {
     let point: P2 = Point2::new(5.0, 5.0);
     let line_0 = Vector2::new(-10.0, -10.0);
     let line_1 = Vector2::new(10.0, 10.0);
-    let line_pos = Point2::from_vec(line_0);
+    let line_pos = Point2::from(line_0);
     let line_vec = line_1 - line_0;
 
     let proj = line_segment_project(line_pos, line_vec, point);
@@ -158,7 +163,7 @@ fn test_segment_projection_percent() {
     let point: P2 = Point2::new(10.0, 0.0);
     let line_0 = Vector2::new(-10.0, -10.0);
     let line_1 = Vector2::new(10.0, -10.0);
-    let line_pos = Point2::from_vec(line_0);
+    let line_pos = Point2::from(line_0);
     let line_vec = line_1 - line_0;
 
     let proj = line_segment_project_percent(line_pos, line_vec, point);
@@ -170,65 +175,28 @@ fn test_rotate_towards() {
     let vector = Vector2::new(0.0, 1.0);
     let desired = Vector2::new(1.0, 0.0);
 
-    let new_vector = rotate_towards(vector, desired, Deg(45.0).into());
+    let new_vector = rotate_towards(vector, desired, deg2rad(45.0).into());
     assert_relative_eq!(new_vector, Vector2::new(0.70710677, 0.70710677));
 
-    let new_vector = rotate_towards(new_vector, desired, Deg(45.0).into());
+    let new_vector = rotate_towards(new_vector, desired, deg2rad(45.0).into());
     assert_relative_eq!(new_vector, Vector2::new(1.0, 0.0));
 }
 
 #[test]
-fn test_transform_with_cgmath() {
-    let m0 = Matrix4::<f32>::identity();
-    let m1 = Matrix4::from_translation(Vector3::new(10.0, 2.0, 0.0));
-    let m2 = m0 * m1;
-    let m3 = Matrix4::from_angle_z(Deg(-90.0));
-    let m4 = m2 * m3;
-    let p = Point3::new(0.0, 1.0, 0.0);
-
-    let result = m2.transform_point(p);
-    println!("{:?}", result);
-
-    let result = m3.transform_point(p);
-    println!("{:?}", result);
-
-    let result = m4.transform_point(p);
-    println!("{:?}", result);
-}
-
-#[test]
-fn test_nalgebra_glm() {
-    use glm::*;
-    use nalgebra_glm as glm;
-
-    let v = glm::vec2(0.0, 1.0);
-    let m1: glm::TMat3<f32> = glm::translation2d(&glm::vec2(5.0, 0.0));
-    let m2: glm::TMat3<f32> = glm::rotation2d(glm::pi::<f32>() * -0.5);
-    let m3: glm::TMat3<f32> = m1 * m2;
-
-    let v3 = vec3(v.x, v.y, 1.0);
-
-    println!("{:?}", v);
-    println!("{:?}", m3 * glm::vec2_to_vec3(&v));
-    println!("{:?}", m3 * v3);
-}
-
-#[test]
 fn test_nalgebra() {
-    use na::*;
-    use nalgebra as na;
-
-    let v = na::Vector2::new(0.0, 1.0);
-    let p = na::Point2::from(v);
-    let translation = na::Vector2::new(10.0, 0.0);
-
-    println!("{:?}", v);
-    println!("{:?}", p);
-    println!("{:?}", p + translation);
-
+    // giving a vector
+    let v = Vector2::new(0.0, 1.0);
+    // to a point
+    let p = Point2::from(v);
+    let p = Point2::origin() + v;
+    // back to coords
     let v = p.coords;
-    println!("{:?}", v);
 
-    let s1 = Similarity2::new(translation, deg2rad(90.0), 1.0);
-    println!("{:?}", s1 * p);
+    // translation
+    let translation = Vector2::new(10.0, 0.0);
+
+    // transformation
+    let s1 = Similarity2::new(translation, deg2rad(-90.0), 1.0);
+    assert_relative_eq!(s1 * p, Point2::new(11.0, 0.0));
+    assert_relative_eq!(s1 * v, Vector2::new(1.0, 0.0));
 }

@@ -1,10 +1,10 @@
-use cgmath::{prelude::*, vec2, Matrix4, Point2, Vector2, VectorSpace};
-use commons::math::{Transform, P2, V2};
+use commons::math::{self, p2, v2, Transform, P2, V2};
 use ggez::conf::WindowMode;
 use ggez::event::{self, EventHandler, KeyCode, KeyMods, MouseButton};
 use ggez::graphics::{Color, DrawParam, Rect};
 use ggez::{graphics, timer, Context, ContextBuilder, GameResult};
 use gridmap::{Cfg, Repository, ShipDesign};
+use nalgebra::{Point2, Vector2};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -25,7 +25,7 @@ struct Gui {
 #[derive(Debug)]
 struct App {
     cfg: AppCfg,
-    editor_transform: Transform,
+    editor_transform: math::Transform,
     editor_area: Rect,
     design: ShipDesign,
     repository: Repository,
@@ -47,7 +47,7 @@ impl App {
 
         Ok(App {
             cfg: app_cfg,
-            editor_transform: Matrix4::identity(),
+            editor_transform: Transform::new(),
             editor_area: graphics::screen_coordinates(ctx),
             design: ShipDesign::new(),
             repository,

@@ -1,9 +1,8 @@
-use crate::math::{P2, V2};
-use cgmath::{prelude::*, Point2, Vector2, VectorSpace};
+use crate::math::{p2, v2, P2, V2};
 use ggez::conf::WindowMode;
 use ggez::event::{self, EventHandler, KeyCode, KeyMods, MouseButton};
 use ggez::graphics::{Color, DrawMode, DrawParam, Rect};
-use ggez::{graphics, Context, ContextBuilder, GameResult};
+use ggez::{graphics, Context, GameResult};
 
 #[derive(Debug, Clone)]
 pub struct GuiButton {
@@ -39,7 +38,7 @@ impl GuiButton {
         let text = graphics::Text::new(format!("{}", self.text));
         let border_x = (self.bounds.w - text.width(ctx) as f32) / 2.0;
         let border_y = (self.bounds.h - text.height(ctx) as f32) / 2.0;
-        let pos = Point2::new(self.bounds.x + border_x, self.bounds.y + border_y);
+        let pos = p2(self.bounds.x + border_x, self.bounds.y + border_y);
 
         graphics::draw(ctx, &text, (pos, graphics::WHITE))?;
 

@@ -1,9 +1,9 @@
-use cgmath::{prelude::*, Deg, InnerSpace, Point2, Quaternion, Rad, Vector2, VectorSpace};
 use commons::math::*;
 use ggez::conf::WindowMode;
 use ggez::event::{self, Button, EventHandler, KeyCode, KeyMods, MouseButton};
 use ggez::graphics::Color;
 use ggez::{graphics, timer, Context, ContextBuilder, GameError, GameResult};
+use nalgebra::{Point2, Vector2};
 use specs::prelude::*;
 use specs::{World, WorldExt};
 use specs_derive::Component;
@@ -78,7 +78,7 @@ impl EventHandler for App {
             for wall in (&self.world.read_storage::<Wall>()).join() {
                 let mut mb = graphics::MeshBuilder::new();
                 mb.line(
-                    &[wall.pos, Point2::from_vec(wall.pos.to_vec() + wall.vec)],
+                    &[wall.pos, Point2::from(wall.pos.clone().coords + wall.vec)],
                     wall.min_distance * 2.0,
                     color_wall,
                 )?;
@@ -117,7 +117,7 @@ impl EventHandler for App {
                 draw_line(
                     ctx,
                     model.pos,
-                    Point2::from_vec(model.pos.to_vec() + model.dir * model.size),
+                    Point2::from(model.pos.coords.clone() + model.dir * model.size),
                     model.color,
                     1.0,
                 )?;
@@ -132,7 +132,7 @@ impl EventHandler for App {
         }
 
         let text = graphics::Text::new(format!("ftps: {}", ggez::timer::fps(ctx) as i32,));
-        graphics::draw(ctx, &text, (cgmath::Point2::new(0.0, 0.0), graphics::WHITE))?;
+        graphics::draw(ctx, &text, (Point2::new(0.0, 0.0), graphics::WHITE))?;
 
         graphics::present(ctx)
     }

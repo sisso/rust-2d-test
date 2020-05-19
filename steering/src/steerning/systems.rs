@@ -1,10 +1,10 @@
 use super::components::*;
 
-use cgmath::{prelude::*, Deg, Point2, Rad, Vector2};
 use commons::math::*;
 use ggez::graphics::Color;
 use ggez::{GameError, GameResult};
 use myelin_geometry::Polygon;
+use nalgebra::{Point2, Vector2};
 use rand::prelude::StdRng;
 use rand::{thread_rng, Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
@@ -157,7 +157,7 @@ impl<'a> System<'a> for MoveSystem {
             {
                 // compute new velocity
                 let desired_velocity = vehicle.desired_vel;
-                vehicle.desired_vel = Vector2::zero();
+                vehicle.desired_vel = Vector2::zeros();
 
                 let current_vel = vehicle.vel_dir * vehicle.speed;
                 let mut delta_velocity = desired_velocity - current_vel;
@@ -187,7 +187,7 @@ impl<'a> System<'a> for MoveSystem {
                 vehicle.dir = rotate_towards(
                     vehicle.dir,
                     vehicle.desired_dir,
-                    Rad(vehicle.rotation_speed * delta_time),
+                    vehicle.rotation_speed * delta_time,
                 );
             }
         }
