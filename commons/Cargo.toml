@@ -9,6 +9,8 @@ edition = "2018"
 [dependencies]
 # math
 cgmath = { version = "0.17", features = ["mint"]}
+nalgebra-glm = "0.1"
+nalgebra = "0.21.0"
 
 # tools
 serde_json = "1.0"

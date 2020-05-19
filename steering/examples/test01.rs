@@ -127,7 +127,7 @@ impl EventHandler for App {
         {
             let lines = take_debug_lines(&mut self.world);
             for (a, b, color) in lines {
-                draw_line(ctx, a, b, color, 1.0);
+                draw_line(ctx, a, b, color, 1.0).unwrap();
             }
         }
 

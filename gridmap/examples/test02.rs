@@ -1,5 +1,5 @@
-use cgmath::{prelude::*, vec2, Point2, Vector2, VectorSpace};
-use commons::math::V2;
+use cgmath::{prelude::*, vec2, Matrix4, Point2, Vector2, VectorSpace};
+use commons::math::{Transform, P2, V2};
 use ggez::conf::WindowMode;
 use ggez::event::{self, EventHandler, KeyCode, KeyMods, MouseButton};
 use ggez::graphics::{Color, DrawParam, Rect};
@@ -10,8 +10,6 @@ use serde_json::Value;
 
 const WIDTH: f32 = 800.0;
 const HEIGHT: f32 = 600.0;
-
-type P2 = cgmath::Point2<f32>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct AppCfg {
@@ -27,6 +25,7 @@ struct Gui {
 #[derive(Debug)]
 struct App {
     cfg: AppCfg,
+    editor_transform: Transform,
     editor_area: Rect,
     design: ShipDesign,
     repository: Repository,
@@ -48,6 +47,7 @@ impl App {
 
         Ok(App {
             cfg: app_cfg,
+            editor_transform: Matrix4::identity(),
             editor_area: graphics::screen_coordinates(ctx),
             design: ShipDesign::new(),
             repository,
@@ -56,6 +56,9 @@ impl App {
     }
 
     fn click_draw_grid(&mut self, ctx: &mut Context, pos: P2) -> GameResult<()> {
+        let grid_pos = self.get_grid_pos(ctx, pos)?;
+        println!("{:?}", grid_pos);
+
         let component = {
             if let Some(component) = self
                 .gui
@@ -69,19 +72,36 @@ impl App {
             }
         };
 
-        let grid_pos = self.get_grid_pos(ctx, pos)?;
-        println!("{:?}", grid_pos);
-
         Ok(())
     }
 
-    fn get_grid_pos(&self, ctx: &mut Context, pos: P2) -> GameResult<P2> {
+    pub fn get_grid_pos(&self, ctx: &mut Context, pos: P2) -> GameResult<P2> {
         let local_pos = pos + Vector2::new(self.editor_area.x, self.editor_area.y);
         // TODO: scale
         let index_x = local_pos.x / self.cfg.cell_size;
         let index_y = local_pos.y / self.cfg.cell_size;
         Ok(Point2::new(index_x, index_y))
     }
+
+    pub fn move_screen(&mut self, v: V2) {
+        // self.editor_transform.translate_inplace(v.x, v.y);
+        self.update_editor_rect_from_transform();
+    }
+
+    pub fn zoom_screen(&mut self, amount: f32) {
+        let scale = if amount > 0.0 {
+            1.1
+        } else if amount < 0.0 {
+            0.9
+        } else {
+            1.0
+        };
+
+        // self.editor_transform.scale(scale);
+        self.update_editor_rect_from_transform();
+    }
+
+    fn update_editor_rect_from_transform(&mut self) {}
 }
 
 fn add_panel_buttons(
@@ -193,14 +213,14 @@ impl EventHandler for App {
 
     fn mouse_motion_event(&mut self, ctx: &mut Context, x: f32, y: f32, dx: f32, dy: f32) {
         if ggez::input::mouse::button_pressed(ctx, MouseButton::Right) {
-            move_screen(&mut self.editor_area, Vector2::new(-dx, -dy));
+            self.move_screen(Vector2::new(-dx, -dy));
         } else {
             self.gui.bottom_panel.on_mouse_move(Point2::new(x, y));
         }
     }
 
     fn mouse_wheel_event(&mut self, ctx: &mut Context, _x: f32, y: f32) {
-        zoom_screen(&mut self.editor_area, -y);
+        self.zoom_screen(-y);
     }
 
     fn key_down_event(
@@ -214,36 +234,20 @@ impl EventHandler for App {
 
         match keycode {
             KeyCode::W => {
-                move_screen(&mut self.editor_area, Vector2::new(0.0, -screen_speed));
+                self.move_screen(Vector2::new(0.0, -screen_speed));
             }
             KeyCode::S => {
-                move_screen(&mut self.editor_area, Vector2::new(0.0, screen_speed));
+                self.move_screen(Vector2::new(0.0, screen_speed));
             }
             KeyCode::A => {
-                move_screen(&mut self.editor_area, Vector2::new(screen_speed, 0.0));
+                self.move_screen(Vector2::new(screen_speed, 0.0));
             }
             KeyCode::D => {
-                move_screen(&mut self.editor_area, Vector2::new(-screen_speed, 0.0));
+                self.move_screen(Vector2::new(-screen_speed, 0.0));
             }
             _ => {}
         }
     }
-}
-
-fn move_screen(rect: &mut Rect, v: V2) {
-    rect.x += v.x;
-    rect.y += v.y;
-}
-
-fn zoom_screen(rect: &mut Rect, amount: f32) {
-    let scale = if amount > 0.0 {
-        1.1
-    } else if amount < 0.0 {
-        0.9
-    } else {
-        1.0
-    };
-    rect.scale(scale, scale);
 }
 
 fn draw_grid(
@@ -259,7 +263,7 @@ fn draw_grid(
     let max_y = grid_size * height as f32;
 
     // vertical lines
-    for i in (0..width + 1) {
+    for i in 0..width + 1 {
         let x = i as f32 * grid_size;
         let p0 = pos + Vector2::new(x, 0.0);
         let p1 = pos + Vector2::new(x, max_y);
@@ -267,7 +271,7 @@ fn draw_grid(
     }
 
     // horizontal lines
-    for i in 0..(height + 1) {
+    for i in 0..height + 1 {
         let y = i as f32 * grid_size;
         let p0 = pos + Vector2::new(0.0, y);
         let p1 = pos + Vector2::new(max_x, y);

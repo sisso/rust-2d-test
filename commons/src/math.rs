@@ -1,10 +1,11 @@
 use cgmath::{
-    assert_relative_eq, prelude::*, Deg, Euler, InnerSpace, Point2, Quaternion, Rad, Vector2,
-    Vector3, VectorSpace,
+    assert_relative_eq, prelude::*, Deg, Euler, InnerSpace, Matrix3, Matrix4, Point2, Point3,
+    Quaternion, Rad, Transform as CTransform, Vector2, Vector3, VectorSpace,
 };
 
 pub type P2 = Point2<f32>;
 pub type V2 = Vector2<f32>;
+pub type Transform = Matrix4<f32>;
 
 /// returns the value between v0 and v1 on t
 pub fn lerp(v0: f32, v1: f32, t: f32) -> f32 {
@@ -174,4 +175,60 @@ fn test_rotate_towards() {
 
     let new_vector = rotate_towards(new_vector, desired, Deg(45.0).into());
     assert_relative_eq!(new_vector, Vector2::new(1.0, 0.0));
+}
+
+#[test]
+fn test_transform_with_cgmath() {
+    let m0 = Matrix4::<f32>::identity();
+    let m1 = Matrix4::from_translation(Vector3::new(10.0, 2.0, 0.0));
+    let m2 = m0 * m1;
+    let m3 = Matrix4::from_angle_z(Deg(-90.0));
+    let m4 = m2 * m3;
+    let p = Point3::new(0.0, 1.0, 0.0);
+
+    let result = m2.transform_point(p);
+    println!("{:?}", result);
+
+    let result = m3.transform_point(p);
+    println!("{:?}", result);
+
+    let result = m4.transform_point(p);
+    println!("{:?}", result);
+}
+
+#[test]
+fn test_nalgebra_glm() {
+    use glm::*;
+    use nalgebra_glm as glm;
+
+    let v = glm::vec2(0.0, 1.0);
+    let m1: glm::TMat3<f32> = glm::translation2d(&glm::vec2(5.0, 0.0));
+    let m2: glm::TMat3<f32> = glm::rotation2d(glm::pi::<f32>() * -0.5);
+    let m3: glm::TMat3<f32> = m1 * m2;
+
+    let v3 = vec3(v.x, v.y, 1.0);
+
+    println!("{:?}", v);
+    println!("{:?}", m3 * glm::vec2_to_vec3(&v));
+    println!("{:?}", m3 * v3);
+}
+
+#[test]
+fn test_nalgebra() {
+    use na::*;
+    use nalgebra as na;
+
+    let v = na::Vector2::new(0.0, 1.0);
+    let p = na::Point2::from(v);
+    let translation = na::Vector2::new(10.0, 0.0);
+
+    println!("{:?}", v);
+    println!("{:?}", p);
+    println!("{:?}", p + translation);
+
+    let v = p.coords;
+    println!("{:?}", v);
+
+    let s1 = Similarity2::new(translation, deg2rad(90.0), 1.0);
+    println!("{:?}", s1 * p);
 }
