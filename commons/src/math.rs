@@ -90,7 +90,7 @@ impl Transform2 {
     }
 
     pub fn local_to_point(&self, p: &P2) -> P2 {
-        self.similarity.inverse().transform_point(&p)
+        self.similarity.inverse_transform_point(&p)
     }
 
     pub fn get_matrix(&self) -> M4 {
@@ -285,4 +285,14 @@ fn test_nalgebra() {
     let s1 = Similarity2::new(translation, deg2rad(-90.0), 1.0);
     assert_relative_eq!(s1 * p, Point2::new(11.0, 0.0));
     assert_relative_eq!(s1 * v, Vector2::new(1.0, 0.0));
+}
+
+#[test]
+fn test_transform_to_local_and_back() {
+    let t = Transform2::new(p2(10.0, 1.0), 1.0, deg2rad(0.0));
+    let p = p2(0.0, 1.0);
+    let p_local = t.point_to_local(&p);
+    assert_relative_eq!(p_local, p2(10.0, 2.0));
+    let p_global = t.local_to_point(&p_local);
+    assert_relative_eq!(p_global, p);
 }

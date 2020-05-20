@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ComponentCfg {
     pub code: String,
+    pub grid_image: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,12 +53,6 @@ impl Size {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Aabb {
-    pub pos: P2,
-    pub size: Size,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ShipComponent {
     Corridor,
@@ -67,32 +62,45 @@ pub enum ShipComponent {
     LifeSupport,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct GridCoord {
+    pub x: u32,
+    pub y: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct Grid<T> {
+    pub list: Vec<T>,
+}
+
+impl<T> Grid<T> {
+    pub fn new() -> Self {
+        Grid { list: vec![] }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ComponentAt {
-    pub aabb: Aabb,
+    pub index: u32,
     pub component: ShipComponent,
 }
 
 #[derive(Debug, Clone)]
 pub struct ShipDesign {
     pub size: Size,
-    pub components: Vec<ComponentAt>,
+    pub grid: Grid<ComponentAt>,
 }
 
 impl ShipDesign {
     pub fn new() -> Self {
         ShipDesign {
             size: Size::new(20, 8),
-            components: vec![],
+            grid: Grid::new(),
         }
     }
 
-    pub fn add_component(&self, component: ShipComponent, dimension: Aabb) -> Result<()> {
-        unimplemented!()
-    }
-
-    pub fn list_components<'a>(&'a self) -> impl Iterator<Item = &'a ComponentAt> + 'a {
-        self.components.iter()
+    pub fn is_valid_coords(&self, coords: GridCoord) -> bool {
+        coords.x < self.size.width && coords.y < self.size.height
     }
 }
 

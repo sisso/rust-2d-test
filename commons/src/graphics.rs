@@ -56,10 +56,15 @@ impl GuiManage {
         GuiManage { buttons: vec![] }
     }
 
-    pub fn on_mouse_move(&mut self, pos: P2) {
+    pub fn on_mouse_move(&mut self, pos: P2) -> bool {
+        let mut result = false;
+
         for button in &mut self.buttons {
             button.hover = button.bounds.contains(pos);
+            result |= button.hover;
         }
+
+        result
     }
 
     pub fn on_mouse_down(&mut self, pos: P2) {

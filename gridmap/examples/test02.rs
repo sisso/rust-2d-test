@@ -3,11 +3,15 @@ use commons::math::{self, p2, v2, Transform2, P2, V2};
 use ggez::conf::WindowMode;
 use ggez::event::{self, EventHandler, KeyCode, KeyMods, MouseButton};
 use ggez::graphics::{Color, DrawParam, Rect};
-use ggez::{graphics, timer, Context, ContextBuilder, GameResult};
-use gridmap::{Cfg, Repository, ShipDesign};
+use ggez::{filesystem, graphics, Context, ContextBuilder, GameError, GameResult};
+use gridmap::{Cfg, ComponentCfg, GridCoord, Repository, ShipDesign};
 use nalgebra::{Point2, Vector2};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::io::Read;
+
+// TODO: drag scale proportional of scale
+// TODO: create struct EditorLocalPos ScreenPos
 
 const WIDTH: f32 = 800.0;
 const HEIGHT: f32 = 600.0;
@@ -20,7 +24,35 @@ struct AppCfg {
 #[derive(Debug)]
 struct Gui {
     bottom_panel: commons::graphics::GuiManage,
-    selected_component: Option<usize>,
+    state: GuiState,
+    component_images: Vec<graphics::Image>,
+    ghost_component: Option<(usize, GridCoord)>,
+}
+
+#[derive(Debug)]
+enum GuiState {
+    Idle,
+    ComponentSelected { index: usize },
+}
+
+struct Resources {}
+
+impl Resources {
+    pub fn get_string(ctx: &mut Context, name: &str) -> GameResult<String> {
+        let mut buffer = String::new();
+        filesystem::open(ctx, name)?
+            .read_to_string(&mut buffer)
+            .map_err(|e| GameError::FilesystemError(format!("Fail to read {}: {}", name, e)))?;
+        Ok(buffer)
+    }
+}
+
+fn flatten_results<T>(list: Vec<GameResult<T>>) -> GameResult<Vec<T>> {
+    let mut result = vec![];
+    for i in list {
+        result.push(i?);
+    }
+    Ok(result)
 }
 
 #[derive(Debug)]
@@ -34,61 +66,80 @@ struct App {
 
 impl App {
     pub fn new(ctx: &mut Context) -> GameResult<App> {
-        let (app_cfg, cfg) = load_cfg("gridmap/resources/config.json")?;
+        ggez::filesystem::print_all(ctx);
+
+        let (app_cfg, cfg) = load_cfg(Resources::get_string(ctx, "/config.json")?.as_str())?;
         let repository = Repository::new(cfg);
 
+        let components: Vec<_> = repository.list_components().collect();
+        let component_images = flatten_results(
+            components
+                .iter()
+                .map(|component| graphics::Image::new(ctx, component.grid_image.as_str()))
+                .collect(),
+        )?;
+
         let mut buttons = commons::graphics::GuiManage::new();
-        add_panel_buttons(&mut buttons, &repository, graphics::screen_coordinates(ctx));
+        add_panel_buttons(&mut buttons, &components, graphics::screen_coordinates(ctx));
 
         let gui = Gui {
             bottom_panel: buttons,
-            selected_component: None,
+            state: GuiState::Idle,
+            component_images,
+            ghost_component: None,
         };
 
-        Ok(App {
+        let app = App {
             cfg: app_cfg,
             editor_transform: Transform2::identity(),
             design: ShipDesign::new(),
             repository,
             gui: gui,
-        })
-    }
-
-    fn click_draw_grid(&mut self, ctx: &mut Context, pos: P2) -> GameResult<()> {
-        let grid_pos = self.get_grid_pos(ctx, pos)?;
-        println!("grid {:?}", grid_pos);
-
-        let component = {
-            if let Some(component) = self
-                .gui
-                .selected_component
-                .map(|index| self.repository.list_components().nth(index))
-                .flatten()
-            {
-                component
-            } else {
-                return Ok(());
-            }
         };
 
-        Ok(())
+        Ok(app)
     }
 
-    pub fn get_grid_pos(&self, ctx: &mut Context, pos: P2) -> GameResult<(u32, u32)> {
-        let local_pos = self.editor_transform.point_to_local(&pos);
+    // TODO: move to guieditor
+    pub fn get_grid_pos(&self, coords: GridCoord) -> P2 {
+        let local_pos = p2(
+            coords.x as f32 * self.cfg.cell_size,
+            coords.y as f32 * self.cfg.cell_size,
+        );
+
+        local_pos
+    }
+
+    // TODO: move to guieditor
+    pub fn get_editor_local_pos(&self, screen_pos: P2) -> P2 {
+        self.editor_transform.point_to_local(&screen_pos)
+    }
+
+    // TODO: move to guieditor
+    /// return grid coords using local coordinates
+    pub fn get_grid_coords(&self, pos: P2) -> Option<GridCoord> {
         let cell_size = self.cfg.cell_size;
 
-        // TODO: replace with to_local?
-        let index_x = local_pos.x / cell_size;
-        let index_y = local_pos.y / cell_size;
+        let index_x = pos.x / cell_size;
+        let index_y = pos.y / cell_size;
+        let coords = GridCoord {
+            x: index_x as u32,
+            y: index_y as u32,
+        };
 
-        Ok((index_x as u32, index_y as u32))
+        if self.design.is_valid_coords(coords) {
+            Some(coords)
+        } else {
+            None
+        }
     }
 
+    // TODO: move to guieditor
     pub fn move_screen(&mut self, v: V2) {
         self.editor_transform.translate(v);
     }
 
+    // TODO: move to guieditor
     pub fn zoom_screen(&mut self, amount: f32) {
         let scale = if amount > 0.0 {
             1.1
@@ -101,14 +152,11 @@ impl App {
         self.editor_transform.scale(scale);
     }
 
+    // TODO: move to guieditor
     fn get_editor_area(&self, ctx: &Context) -> Rect {
         assert_relative_eq!(self.editor_transform.get_angle(), 0.0);
 
         let rect = graphics::screen_coordinates(ctx);
-        // rect.translate(self.editor_transform.get_pos().coords);
-        // let scale = self.editor_transform.get_scale();
-        // rect.scale(scale, scale);
-        // rect
         let p1 = p2(rect.left(), rect.top());
         let p2 = p2(rect.right(), rect.bottom());
 
@@ -123,16 +171,23 @@ impl App {
             local_p2.y - local_p1.y,
         );
 
-        // println!("original {:?}", rect);
-        // println!("other {:?}", new_rect);
-
         new_rect
+    }
+
+    pub fn get_component_grid_image_by_index(&self, index: usize) -> GameResult<&graphics::Image> {
+        self.gui
+            .component_images
+            .get(index)
+            .ok_or(GameError::FilesystemError(format!(
+                "image component index {} not found",
+                index
+            )))
     }
 }
 
 fn add_panel_buttons(
     gui: &mut commons::graphics::GuiManage,
-    repository: &Repository,
+    components: &Vec<&ComponentCfg>,
     screen_size: Rect,
 ) -> GameResult<()> {
     let button_rect = Rect::new(0.0, 0.0, 60.0, 40.0);
@@ -143,7 +198,7 @@ fn add_panel_buttons(
         button_rect.h,
     );
 
-    for (i, component) in repository.list_components().enumerate() {
+    for (i, component) in components.iter().enumerate() {
         let desl_x = i as f32 * button_rect.w;
 
         let rect = Rect::new(
@@ -189,12 +244,12 @@ impl EventHandler for App {
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
         graphics::clear(ctx, graphics::BLACK);
 
-        // screen
+        // editor
+        let editor_area = self.get_editor_area(ctx);
+        graphics::set_screen_coordinates(ctx, editor_area)?;
+
         {
             // graphics::push_transform(ctx, None);
-
-            let editor_area = self.get_editor_area(ctx);
-            graphics::set_screen_coordinates(ctx, editor_area)?;
 
             // graphics::push_transform(ctx, Some(self.editor_transform.get_matrix()));
             draw_grid(
@@ -209,11 +264,20 @@ impl EventHandler for App {
             // graphics::pop_transform(ctx);
         }
 
-        let screen_size = Rect::new(0.0, 0.0, WIDTH, HEIGHT);
+        {
+            if let Some((index, coords)) = self.gui.ghost_component {
+                let pos = self.get_grid_pos(coords);
+                let img = self.get_component_grid_image_by_index(index)?;
+
+                graphics::draw(ctx, img, DrawParam::new().dest(pos));
+            }
+        }
 
         // gui
+        let screen_size = Rect::new(0.0, 0.0, WIDTH, HEIGHT);
+        graphics::set_screen_coordinates(ctx, screen_size)?;
+
         {
-            graphics::set_screen_coordinates(ctx, screen_size)?;
             let text = graphics::Text::new(format!("cfg: {:?}", self));
             graphics::draw(ctx, &text, (Point2::new(0.0, 0.0), graphics::WHITE))?;
         }
@@ -238,9 +302,7 @@ impl EventHandler for App {
 
         if button == MouseButton::Left {
             if let Some(id) = self.gui.bottom_panel.on_mouse_up(pos) {
-                self.gui.selected_component = Some(id as usize);
-            } else {
-                self.click_draw_grid(ctx, pos).unwrap();
+                self.gui.state = GuiState::ComponentSelected { index: id as usize };
             }
         }
     }
@@ -248,8 +310,17 @@ impl EventHandler for App {
     fn mouse_motion_event(&mut self, ctx: &mut Context, x: f32, y: f32, dx: f32, dy: f32) {
         if ggez::input::mouse::button_pressed(ctx, MouseButton::Right) {
             self.move_screen(Vector2::new(-dx, -dy));
+        } else if self.gui.bottom_panel.on_mouse_move(Point2::new(x, y)) {
         } else {
-            self.gui.bottom_panel.on_mouse_move(Point2::new(x, y));
+            match self.gui.state {
+                GuiState::ComponentSelected { index } => {
+                    let editor_pos = self.get_editor_local_pos(p2(x, y));
+                    self.gui.ghost_component = self
+                        .get_grid_coords(editor_pos)
+                        .map(|coords| (index, coords));
+                }
+                GuiState::Idle => {}
+            }
         }
     }
 
@@ -315,9 +386,8 @@ fn draw_grid(
     Ok(())
 }
 
-fn load_cfg(file_path: &str) -> GameResult<(AppCfg, Cfg)> {
-    let body = std::fs::read_to_string(file_path).unwrap();
-    let value: Value = serde_json::from_str(body.as_str()).unwrap();
+fn load_cfg(body: &str) -> GameResult<(AppCfg, Cfg)> {
+    let value: Value = serde_json::from_str(body).unwrap();
 
     Ok((
         serde_json::from_value(value["gui"].clone()).unwrap(),
@@ -326,6 +396,14 @@ fn load_cfg(file_path: &str) -> GameResult<(AppCfg, Cfg)> {
 }
 
 fn main() -> GameResult<()> {
+    let resource_dir = if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+        let mut path = std::path::PathBuf::from(manifest_dir);
+        path.push("resources");
+        path
+    } else {
+        std::path::PathBuf::from("./resources")
+    };
+
     // Make a Context.
     let mut window_mode: WindowMode = Default::default();
     window_mode.width = WIDTH;
@@ -333,6 +411,7 @@ fn main() -> GameResult<()> {
 
     let (mut ctx, mut event_loop) = ContextBuilder::new("template", "Sisso")
         .window_mode(window_mode)
+        .add_resource_path(resource_dir)
         .build()
         .unwrap();
 

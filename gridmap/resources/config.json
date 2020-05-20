@@ -1,20 +1,24 @@
 {
   "gui": {
-    "cell_size": 15.0
+    "cell_size": 16.0
   },
   "game": {
     "components": [
       {
-        "code": "engine"
+        "code": "engine",
+        "grid_image": "/grid_engine.png"
       },
       {
-        "code": "corridor"
+        "code": "corridor",
+        "grid_image": "/grid_corridor.png"
       },
       {
-        "code": "cockpit"
+        "code": "cockpit",
+        "grid_image": "/grid_cockpit.png"
       },
       {
-        "code": "airlock"
+        "code": "airlock",
+        "grid_image": "/grid_airlock.png"
       }
     ]
   }
