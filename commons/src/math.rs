@@ -1,8 +1,12 @@
 use approx::assert_relative_eq;
-use nalgebra::{self as na, Point2, Rotation2, Similarity2, Vector2};
+use nalgebra::{
+    self as na, Matrix4, Point2, Rotation2, Similarity2, Similarity3, Vector2, Vector3,
+};
 
 pub type P2 = Point2<f32>;
 pub type V2 = Vector2<f32>;
+pub type Sim2 = Similarity2<f32>;
+pub type M4 = Matrix4<f32>;
 pub const PI: f32 = std::f32::consts::PI;
 
 pub fn v2(x: f32, y: f32) -> V2 {
@@ -14,11 +18,93 @@ pub fn p2(x: f32, y: f32) -> P2 {
 }
 
 #[derive(Debug, Clone)]
-pub struct Transform {}
+pub struct Transform2 {
+    pos: P2,
+    scale: f32,
+    angle: f32,
+    similarity: Similarity2<f32>,
+}
 
-impl Transform {
-    pub fn new() -> Self {
-        Transform {}
+impl Transform2 {
+    pub fn new(pos: P2, scale: f32, rotation: f32) -> Self {
+        Transform2 {
+            pos,
+            scale,
+            angle: rotation,
+            similarity: Similarity2::new(pos.coords.clone(), rotation, scale),
+        }
+    }
+
+    pub fn identity() -> Self {
+        Transform2 {
+            pos: Point2::origin(),
+            scale: 1.0,
+            angle: 0.0,
+            similarity: Similarity2::identity(),
+        }
+    }
+
+    pub fn get_pos(&self) -> &P2 {
+        &self.pos
+    }
+
+    pub fn get_angle(&self) -> f32 {
+        self.angle
+    }
+
+    pub fn get_scale(&self) -> f32 {
+        self.scale
+    }
+
+    pub fn set_pos(&mut self, p: P2) {
+        self.pos = p;
+        self.recriate_similarity();
+    }
+
+    pub fn set_scale(&mut self, s: f32) {
+        self.scale = s;
+        self.recriate_similarity();
+    }
+
+    pub fn set_angle(&mut self, r: f32) {
+        self.angle = r;
+        self.recriate_similarity();
+    }
+
+    pub fn translate(&mut self, v: V2) {
+        self.pos = self.pos + v;
+        self.recriate_similarity();
+    }
+
+    pub fn scale(&mut self, v: f32) {
+        self.scale *= v;
+        self.recriate_similarity();
+    }
+
+    pub fn get_similarity(&self) -> &Similarity2<f32> {
+        &self.similarity
+    }
+
+    pub fn point_to_local(&self, p: &P2) -> P2 {
+        self.similarity.transform_point(&p)
+    }
+
+    pub fn local_to_point(&self, p: &P2) -> P2 {
+        self.similarity.inverse().transform_point(&p)
+    }
+
+    pub fn get_matrix(&self) -> M4 {
+        let sim = Similarity3::new(
+            Vector3::new(self.pos.coords.x, self.pos.coords.y, 0.0),
+            Vector3::new(0.0, 0.0, self.angle),
+            self.scale,
+        );
+
+        sim.into()
+    }
+
+    fn recriate_similarity(&mut self) {
+        self.similarity = Similarity2::new(self.pos.coords.clone(), self.angle, self.scale);
     }
 }
 

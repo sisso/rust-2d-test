@@ -1,4 +1,5 @@
-use commons::math::{self, p2, v2, Transform, P2, V2};
+use approx::assert_relative_eq;
+use commons::math::{self, p2, v2, Transform2, P2, V2};
 use ggez::conf::WindowMode;
 use ggez::event::{self, EventHandler, KeyCode, KeyMods, MouseButton};
 use ggez::graphics::{Color, DrawParam, Rect};
@@ -25,8 +26,7 @@ struct Gui {
 #[derive(Debug)]
 struct App {
     cfg: AppCfg,
-    editor_transform: math::Transform,
-    editor_area: Rect,
+    editor_transform: math::Transform2,
     design: ShipDesign,
     repository: Repository,
     gui: Gui,
@@ -47,8 +47,7 @@ impl App {
 
         Ok(App {
             cfg: app_cfg,
-            editor_transform: Transform::new(),
-            editor_area: graphics::screen_coordinates(ctx),
+            editor_transform: Transform2::identity(),
             design: ShipDesign::new(),
             repository,
             gui: gui,
@@ -57,7 +56,7 @@ impl App {
 
     fn click_draw_grid(&mut self, ctx: &mut Context, pos: P2) -> GameResult<()> {
         let grid_pos = self.get_grid_pos(ctx, pos)?;
-        println!("{:?}", grid_pos);
+        println!("grid {:?}", grid_pos);
 
         let component = {
             if let Some(component) = self
@@ -75,17 +74,19 @@ impl App {
         Ok(())
     }
 
-    pub fn get_grid_pos(&self, ctx: &mut Context, pos: P2) -> GameResult<P2> {
-        let local_pos = pos + Vector2::new(self.editor_area.x, self.editor_area.y);
-        // TODO: scale
-        let index_x = local_pos.x / self.cfg.cell_size;
-        let index_y = local_pos.y / self.cfg.cell_size;
-        Ok(Point2::new(index_x, index_y))
+    pub fn get_grid_pos(&self, ctx: &mut Context, pos: P2) -> GameResult<(u32, u32)> {
+        let local_pos = self.editor_transform.point_to_local(&pos);
+        let cell_size = self.cfg.cell_size;
+
+        // TODO: replace with to_local?
+        let index_x = local_pos.x / cell_size;
+        let index_y = local_pos.y / cell_size;
+
+        Ok((index_x as u32, index_y as u32))
     }
 
     pub fn move_screen(&mut self, v: V2) {
-        // self.editor_transform.translate_inplace(v.x, v.y);
-        self.update_editor_rect_from_transform();
+        self.editor_transform.translate(v);
     }
 
     pub fn zoom_screen(&mut self, amount: f32) {
@@ -97,11 +98,36 @@ impl App {
             1.0
         };
 
-        // self.editor_transform.scale(scale);
-        self.update_editor_rect_from_transform();
+        self.editor_transform.scale(scale);
     }
 
-    fn update_editor_rect_from_transform(&mut self) {}
+    fn get_editor_area(&self, ctx: &Context) -> Rect {
+        assert_relative_eq!(self.editor_transform.get_angle(), 0.0);
+
+        let rect = graphics::screen_coordinates(ctx);
+        // rect.translate(self.editor_transform.get_pos().coords);
+        // let scale = self.editor_transform.get_scale();
+        // rect.scale(scale, scale);
+        // rect
+        let p1 = p2(rect.left(), rect.top());
+        let p2 = p2(rect.right(), rect.bottom());
+
+        let local_p1 = self.editor_transform.point_to_local(&p1);
+
+        let local_p2 = self.editor_transform.point_to_local(&p2);
+
+        let new_rect = Rect::new(
+            local_p1.x,
+            local_p1.y,
+            local_p2.x - local_p1.x,
+            local_p2.y - local_p1.y,
+        );
+
+        // println!("original {:?}", rect);
+        // println!("other {:?}", new_rect);
+
+        new_rect
+    }
 }
 
 fn add_panel_buttons(
@@ -165,28 +191,36 @@ impl EventHandler for App {
 
         // screen
         {
-            graphics::set_screen_coordinates(ctx, self.editor_area);
+            // graphics::push_transform(ctx, None);
+
+            let editor_area = self.get_editor_area(ctx);
+            graphics::set_screen_coordinates(ctx, editor_area)?;
+
+            // graphics::push_transform(ctx, Some(self.editor_transform.get_matrix()));
             draw_grid(
                 ctx,
                 Point2::new(0.0, 0.0),
                 self.cfg.cell_size,
+                // self.get_editor_cell_size(),
                 self.design.size.width,
                 self.design.size.height,
             )?;
+
+            // graphics::pop_transform(ctx);
         }
 
         let screen_size = Rect::new(0.0, 0.0, WIDTH, HEIGHT);
 
         // gui
         {
-            graphics::set_screen_coordinates(ctx, screen_size);
+            graphics::set_screen_coordinates(ctx, screen_size)?;
             let text = graphics::Text::new(format!("cfg: {:?}", self));
             graphics::draw(ctx, &text, (Point2::new(0.0, 0.0), graphics::WHITE))?;
         }
 
         // gui buttons
         {
-            self.gui.bottom_panel.draw(ctx);
+            self.gui.bottom_panel.draw(ctx)?;
         }
 
         // show
