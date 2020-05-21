@@ -5,8 +5,8 @@ use ggez::graphics::{Color, DrawMode, DrawParam, Rect};
 use ggez::{graphics, Context, GameResult};
 
 #[derive(Debug, Clone)]
-pub struct GuiButton {
-    pub uid: u32,
+pub struct GuiButton<ID: Copy> {
+    pub uid: ID,
     pub bounds: Rect,
     pub text: String,
     pub hover: bool,
@@ -17,7 +17,7 @@ pub struct GuiButton {
     pub color_click: Color,
 }
 
-impl GuiButton {
+impl<ID: Copy> GuiButton<ID> {
     pub fn draw(&self, ctx: &mut Context) -> GameResult<()> {
         let mut builder = graphics::MeshBuilder::new();
 
@@ -47,11 +47,11 @@ impl GuiButton {
 }
 
 #[derive(Debug, Clone)]
-pub struct GuiManage {
-    buttons: Vec<GuiButton>,
+pub struct GuiManage<ID: Copy> {
+    buttons: Vec<GuiButton<ID>>,
 }
 
-impl GuiManage {
+impl<ID: Copy> GuiManage<ID> {
     pub fn new() -> Self {
         GuiManage { buttons: vec![] }
     }
@@ -76,7 +76,7 @@ impl GuiManage {
         result
     }
 
-    pub fn on_mouse_up(&mut self, pos: P2) -> Option<u32> {
+    pub fn on_mouse_up(&mut self, pos: P2) -> Option<ID> {
         let mut selected = None;
         for button in &mut self.buttons {
             if button.click {
@@ -97,7 +97,7 @@ impl GuiManage {
         Ok(())
     }
 
-    pub fn push(&mut self, button: GuiButton) -> usize {
+    pub fn push(&mut self, button: GuiButton<ID>) -> usize {
         self.buttons.push(button);
         self.buttons.len() - 1
     }

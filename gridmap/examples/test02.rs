@@ -3,7 +3,7 @@ use commons::math::{self, p2, v2, Transform2, P2, V2};
 use ggez::conf::WindowMode;
 use ggez::event::{self, EventHandler, KeyCode, KeyMods, MouseButton};
 use ggez::graphics::{Color, DrawParam, Rect};
-use ggez::{filesystem, graphics, Context, ContextBuilder, GameError, GameResult};
+use ggez::{filesystem, graphics, input, Context, ContextBuilder, GameError, GameResult};
 use gridmap::{ComponentId, GridCoord, ShipDesign, ShipDesignRepository};
 use nalgebra::{Point2, Vector2};
 use serde::{Deserialize, Serialize};
@@ -46,9 +46,15 @@ impl AppCfg {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum GuiId {
+    Component(ComponentId),
+    Remove,
+}
+
 #[derive(Debug)]
 struct Gui {
-    buttons_panel: commons::graphics::GuiManage,
+    buttons_panel: commons::graphics::GuiManage<GuiId>,
     state: GuiState,
     component_images: HashMap<ComponentId, graphics::Image>,
     ghost_component: Option<(ComponentId, GridCoord)>,
@@ -58,6 +64,7 @@ struct Gui {
 enum GuiState {
     Idle,
     ComponentSelected { component_id: ComponentId },
+    RemoveSelected,
 }
 
 struct Resources {}
@@ -94,13 +101,13 @@ impl App {
         let cfg = AppCfg::from_json_string(Resources::get_string(ctx, "/config.json")?.as_str())?;
         let mut repository = ShipDesignRepository::new();
         let mut component_images = HashMap::new();
-        let mut buttons = vec![];
+        let mut buttons = vec![(GuiId::Remove, "Clear")];
 
         for comp in &cfg.ship_design.components {
             let id = repository.add_component_def(comp.code.as_str());
             let image = graphics::Image::new(ctx, comp.grid_image.as_str())?;
             component_images.insert(id, image);
-            buttons.push((id, comp.code.as_str()));
+            buttons.push((GuiId::Component(id), comp.code.as_str()));
         }
 
         let mut buttons_panel = commons::graphics::GuiManage::new();
@@ -211,11 +218,37 @@ impl App {
                 id
             )))
     }
+
+    /// apply changes when in editor when player click or drag
+    pub fn editor_apply_state(&mut self, enabled: bool, mouse_pos: P2) {
+        match self.gui.state {
+            GuiState::ComponentSelected { component_id } => {
+                self.editor_apply_component(enabled, mouse_pos, Some(component_id))
+            }
+            GuiState::RemoveSelected => self.editor_apply_component(enabled, mouse_pos, None),
+            GuiState::Idle => {}
+        }
+    }
+
+    fn editor_apply_component(
+        &mut self,
+        enabled: bool,
+        mouse_pos: P2,
+        component_id: Option<ComponentId>,
+    ) {
+        let editor_pos = self.get_editor_local_pos(mouse_pos);
+        if let Some(coords) = self.get_grid_coords(editor_pos) {
+            if enabled {
+                self.design.set_component(coords, component_id).unwrap();
+            }
+            self.gui.ghost_component = component_id.map(|i| (i, coords));
+        }
+    }
 }
 
 fn add_panel_buttons(
-    gui: &mut commons::graphics::GuiManage,
-    components: &Vec<(ComponentId, &str)>,
+    gui: &mut commons::graphics::GuiManage<GuiId>,
+    components: &Vec<(GuiId, &str)>,
     screen_size: Rect,
 ) -> GameResult<()> {
     let button_rect = Rect::new(0.0, 0.0, 60.0, 40.0);
@@ -351,16 +384,8 @@ impl EventHandler for App {
 
     fn mouse_button_down_event(&mut self, ctx: &mut Context, button: MouseButton, x: f32, y: f32) {
         if button == MouseButton::Left {
-            if !self.gui.buttons_panel.on_mouse_down(Point2::new(x, y)) {
-                match self.gui.state {
-                    GuiState::ComponentSelected { component_id } => {
-                        let editor_pos = self.get_editor_local_pos(p2(x, y));
-                        if let Some(coords) = self.get_grid_coords(editor_pos) {
-                            self.design.set_component(coords, component_id).unwrap();
-                        }
-                    }
-                    GuiState::Idle => {}
-                }
+            if !self.gui.buttons_panel.on_mouse_down(p2(x, y)) {
+                self.editor_apply_state(true, p2(x, y));
             }
         }
     }
@@ -369,8 +394,12 @@ impl EventHandler for App {
         let pos = Point2::new(x, y);
 
         if button == MouseButton::Left {
-            if let Some(id) = self.gui.buttons_panel.on_mouse_up(pos) {
-                self.gui.state = GuiState::ComponentSelected { component_id: id };
+            match self.gui.buttons_panel.on_mouse_up(pos) {
+                Some(GuiId::Component(component_id)) => {
+                    self.gui.state = GuiState::ComponentSelected { component_id }
+                }
+                Some(GuiId::Remove) => self.gui.state = GuiState::RemoveSelected,
+                _ => {}
             }
         }
     }
@@ -378,22 +407,9 @@ impl EventHandler for App {
     fn mouse_motion_event(&mut self, ctx: &mut Context, x: f32, y: f32, dx: f32, dy: f32) {
         if ggez::input::mouse::button_pressed(ctx, MouseButton::Right) {
             self.move_screen(Vector2::new(-dx, -dy));
-        } else if self.gui.buttons_panel.on_mouse_move(Point2::new(x, y)) {
-        } else {
-            match self.gui.state {
-                GuiState::ComponentSelected { component_id } => {
-                    let editor_pos = self.get_editor_local_pos(p2(x, y));
-                    if let Some(coords) = self.get_grid_coords(editor_pos) {
-                        if ggez::input::mouse::button_pressed(ctx, MouseButton::Left) {
-                            self.design.set_component(coords, component_id).unwrap();
-                        }
-                        self.gui.ghost_component = Some((component_id, coords));
-                    } else {
-                        self.gui.ghost_component = None;
-                    }
-                }
-                GuiState::Idle => {}
-            }
+        } else if !self.gui.buttons_panel.on_mouse_move(Point2::new(x, y)) {
+            let enable = input::mouse::button_pressed(ctx, MouseButton::Left);
+            self.editor_apply_state(enable, p2(x, y));
         }
     }
 

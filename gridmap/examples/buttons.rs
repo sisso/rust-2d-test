@@ -11,7 +11,7 @@ const HEIGHT: f32 = 600.0;
 
 #[derive(Debug)]
 struct App {
-    gui: GuiManage,
+    gui: GuiManage<u32>,
 }
 
 impl App {

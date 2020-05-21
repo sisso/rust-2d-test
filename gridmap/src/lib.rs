@@ -106,20 +106,20 @@ impl ShipDesign {
     pub fn set_component(
         &mut self,
         coords: GridCoord,
-        component_id: ComponentId,
+        component_id: Option<ComponentId>,
     ) -> std::result::Result<(), SetComponentError> {
         if !self.is_valid_coords(coords) {
             return Err(SetComponentError::InvalidIndex);
         }
 
         let index = self.grid.coords_to_index(coords);
-        self.grid.set(
+
+        let value = component_id.map(|component_id| ComponentAt {
             index,
-            Some(ComponentAt {
-                index,
-                component_id,
-            }),
-        );
+            component_id,
+        });
+
+        self.grid.set(index, value);
 
         Ok(())
     }
