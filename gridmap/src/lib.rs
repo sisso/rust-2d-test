@@ -1,33 +1,17 @@
-use ggez::GameResult;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ComponentCfg {
+pub type ComponentId = u32;
+
+#[derive(Debug, Clone)]
+pub struct ComponentDef {
+    pub id: ComponentId,
     pub code: String,
-    pub grid_image: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Cfg {
-    components: Vec<ComponentCfg>,
-}
-
-impl Cfg {
-    pub fn load(file_path: &str) -> GameResult<Cfg> {
-        let body = std::fs::read_to_string(file_path).unwrap();
-        let cfg: Cfg = serde_json::from_str(body.as_str()).unwrap();
-        Ok(cfg)
-    }
 }
 
 #[derive(Debug, Clone)]
-pub enum Error {
-    Failure,
-    Exception,
-    Error,
+pub enum SetComponentError {
+    InvalidIndex,
 }
-
-type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Clone)]
 pub struct P2 {
@@ -53,15 +37,6 @@ impl Size {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ShipComponent {
-    Corridor,
-    Engine,
-    Cockpit,
-    PowerGenerator,
-    LifeSupport,
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct GridCoord {
     pub x: u32,
@@ -70,51 +45,120 @@ pub struct GridCoord {
 
 #[derive(Debug, Clone)]
 pub struct Grid<T> {
-    pub list: Vec<T>,
+    pub width: u32,
+    pub height: u32,
+    pub list: Vec<Option<T>>,
 }
 
 impl<T> Grid<T> {
-    pub fn new() -> Self {
-        Grid { list: vec![] }
+    pub fn new(width: u32, height: u32) -> Self {
+        let mut list = vec![];
+        for _ in 0..width * height {
+            list.push(None);
+        }
+
+        Grid {
+            width,
+            height,
+            list,
+        }
+    }
+
+    pub fn set(&mut self, index: u32, value: Option<T>) {
+        self.list[index as usize] = value;
+    }
+
+    pub fn get(&self, index: u32) -> Option<&T> {
+        self.list[index as usize].as_ref()
+    }
+
+    pub fn is_valid_coords(&self, coords: GridCoord) -> bool {
+        coords.x < self.width && coords.y < self.height
+    }
+
+    pub fn coords_to_index(&self, coords: GridCoord) -> u32 {
+        coords.y * self.width + coords.x
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct ComponentAt {
     pub index: u32,
-    pub component: ShipComponent,
+    pub component_id: ComponentId,
 }
 
 #[derive(Debug, Clone)]
 pub struct ShipDesign {
-    pub size: Size,
     pub grid: Grid<ComponentAt>,
 }
 
 impl ShipDesign {
-    pub fn new() -> Self {
+    pub fn new(width: u32, height: u32) -> Self {
         ShipDesign {
-            size: Size::new(20, 8),
-            grid: Grid::new(),
+            grid: Grid::new(width, height),
         }
     }
 
     pub fn is_valid_coords(&self, coords: GridCoord) -> bool {
-        coords.x < self.size.width && coords.y < self.size.height
+        self.grid.is_valid_coords(coords)
+    }
+
+    pub fn set_component(
+        &mut self,
+        coords: GridCoord,
+        component_id: ComponentId,
+    ) -> std::result::Result<(), SetComponentError> {
+        if !self.is_valid_coords(coords) {
+            return Err(SetComponentError::InvalidIndex);
+        }
+
+        let index = self.grid.coords_to_index(coords);
+        self.grid.set(
+            index,
+            Some(ComponentAt {
+                index,
+                component_id,
+            }),
+        );
+
+        Ok(())
+    }
+
+    pub fn get_width(&self) -> u32 {
+        self.grid.width
+    }
+
+    pub fn get_height(&self) -> u32 {
+        self.grid.height
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct Repository {
-    cfg: Cfg,
+pub struct ShipDesignRepository {
+    components: Vec<ComponentDef>,
 }
 
-impl Repository {
-    pub fn new(cfg: Cfg) -> Self {
-        Repository { cfg }
+impl ShipDesignRepository {
+    pub fn new() -> Self {
+        ShipDesignRepository { components: vec![] }
     }
 
-    pub fn list_components<'a>(&'a self) -> impl Iterator<Item = &'a ComponentCfg> + 'a {
-        self.cfg.components.iter()
+    pub fn add_component_def(&mut self, code: &str) -> ComponentId {
+        let next_id = self.components.len() as u32;
+
+        self.components.push(ComponentDef {
+            id: next_id,
+            code: code.to_string(),
+        });
+
+        next_id
+    }
+
+    pub fn get_component(&self, id: ComponentId) -> &ComponentDef {
+        self.components.get(id as usize).unwrap()
+    }
+
+    pub fn list_components(&self) -> &Vec<ComponentDef> {
+        &self.components
     }
 }

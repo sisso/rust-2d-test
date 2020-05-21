@@ -1,12 +1,27 @@
 {
   "gui": {
-    "cell_size": 16.0
+    "cell_size": 16.0,
+    "components": [
+      {
+        "code": "engine"
+      },
+      {
+        "code": "corridor"
+      },
+      {
+        "code": "cockpit"
+      },
+      {
+        "code": "airlock"
+      }
+    ]
   },
-  "game": {
+  "ship_design": {
     "components": [
       {
         "code": "engine",
-        "grid_image": "/grid_engine.png"
+        "grid_image": "/grid_engine.png",
+        "border_back": true
       },
       {
         "code": "corridor",
@@ -14,11 +29,13 @@
       },
       {
         "code": "cockpit",
-        "grid_image": "/grid_cockpit.png"
+        "grid_image": "/grid_cockpit.png",
+        "border_front": true
       },
       {
         "code": "airlock",
-        "grid_image": "/grid_airlock.png"
+        "grid_image": "/grid_airlock.png",
+        "connect_rooms": true
       }
     ]
   }

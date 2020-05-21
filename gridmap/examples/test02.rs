@@ -4,10 +4,11 @@ use ggez::conf::WindowMode;
 use ggez::event::{self, EventHandler, KeyCode, KeyMods, MouseButton};
 use ggez::graphics::{Color, DrawParam, Rect};
 use ggez::{filesystem, graphics, Context, ContextBuilder, GameError, GameResult};
-use gridmap::{Cfg, ComponentCfg, GridCoord, Repository, ShipDesign};
+use gridmap::{ComponentId, GridCoord, ShipDesign, ShipDesignRepository};
 use nalgebra::{Point2, Vector2};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::io::Read;
 
 // TODO: drag scale proportional of scale
@@ -17,22 +18,46 @@ const WIDTH: f32 = 800.0;
 const HEIGHT: f32 = 600.0;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct AppCfg {
+struct GuiComponentCfg {
+    code: String,
+    grid_image: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct GuiCfg {
     cell_size: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ShipDesignCfg {
+    components: Vec<GuiComponentCfg>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct AppCfg {
+    gui: GuiCfg,
+    ship_design: ShipDesignCfg,
+}
+
+impl AppCfg {
+    pub fn from_json_string(body: &str) -> GameResult<AppCfg> {
+        let value: Value = serde_json::from_str(body).unwrap();
+        Ok(serde_json::from_value(value).unwrap())
+    }
 }
 
 #[derive(Debug)]
 struct Gui {
-    bottom_panel: commons::graphics::GuiManage,
+    buttons_panel: commons::graphics::GuiManage,
     state: GuiState,
-    component_images: Vec<graphics::Image>,
-    ghost_component: Option<(usize, GridCoord)>,
+    component_images: HashMap<ComponentId, graphics::Image>,
+    ghost_component: Option<(ComponentId, GridCoord)>,
 }
 
 #[derive(Debug)]
 enum GuiState {
     Idle,
-    ComponentSelected { index: usize },
+    ComponentSelected { component_id: ComponentId },
 }
 
 struct Resources {}
@@ -60,39 +85,42 @@ struct App {
     cfg: AppCfg,
     editor_transform: math::Transform2,
     design: ShipDesign,
-    repository: Repository,
+    repository: ShipDesignRepository,
     gui: Gui,
 }
 
 impl App {
     pub fn new(ctx: &mut Context) -> GameResult<App> {
-        ggez::filesystem::print_all(ctx);
+        let cfg = AppCfg::from_json_string(Resources::get_string(ctx, "/config.json")?.as_str())?;
+        let mut repository = ShipDesignRepository::new();
+        let mut component_images = HashMap::new();
+        let mut buttons = vec![];
 
-        let (app_cfg, cfg) = load_cfg(Resources::get_string(ctx, "/config.json")?.as_str())?;
-        let repository = Repository::new(cfg);
+        for comp in &cfg.ship_design.components {
+            let id = repository.add_component_def(comp.code.as_str());
+            let image = graphics::Image::new(ctx, comp.grid_image.as_str())?;
+            component_images.insert(id, image);
+            buttons.push((id, comp.code.as_str()));
+        }
 
-        let components: Vec<_> = repository.list_components().collect();
-        let component_images = flatten_results(
-            components
-                .iter()
-                .map(|component| graphics::Image::new(ctx, component.grid_image.as_str()))
-                .collect(),
-        )?;
-
-        let mut buttons = commons::graphics::GuiManage::new();
-        add_panel_buttons(&mut buttons, &components, graphics::screen_coordinates(ctx));
+        let mut buttons_panel = commons::graphics::GuiManage::new();
+        add_panel_buttons(
+            &mut buttons_panel,
+            &buttons,
+            graphics::screen_coordinates(ctx),
+        );
 
         let gui = Gui {
-            bottom_panel: buttons,
+            buttons_panel,
             state: GuiState::Idle,
             component_images,
             ghost_component: None,
         };
 
         let app = App {
-            cfg: app_cfg,
+            cfg: cfg,
             editor_transform: Transform2::identity(),
-            design: ShipDesign::new(),
+            design: ShipDesign::new(20, 8),
             repository,
             gui: gui,
         };
@@ -103,8 +131,8 @@ impl App {
     // TODO: move to guieditor
     pub fn get_grid_pos(&self, coords: GridCoord) -> P2 {
         let local_pos = p2(
-            coords.x as f32 * self.cfg.cell_size,
-            coords.y as f32 * self.cfg.cell_size,
+            coords.x as f32 * self.cfg.gui.cell_size,
+            coords.y as f32 * self.cfg.gui.cell_size,
         );
 
         local_pos
@@ -118,7 +146,7 @@ impl App {
     // TODO: move to guieditor
     /// return grid coords using local coordinates
     pub fn get_grid_coords(&self, pos: P2) -> Option<GridCoord> {
-        let cell_size = self.cfg.cell_size;
+        let cell_size = self.cfg.gui.cell_size;
 
         let index_x = pos.x / cell_size;
         let index_y = pos.y / cell_size;
@@ -174,20 +202,23 @@ impl App {
         new_rect
     }
 
-    pub fn get_component_grid_image_by_index(&self, index: usize) -> GameResult<&graphics::Image> {
+    pub fn get_component_grid_image_by_index(
+        &self,
+        id: ComponentId,
+    ) -> GameResult<&graphics::Image> {
         self.gui
             .component_images
-            .get(index)
+            .get(&id)
             .ok_or(GameError::FilesystemError(format!(
                 "image component index {} not found",
-                index
+                id
             )))
     }
 }
 
 fn add_panel_buttons(
     gui: &mut commons::graphics::GuiManage,
-    components: &Vec<&ComponentCfg>,
+    components: &Vec<(ComponentId, &str)>,
     screen_size: Rect,
 ) -> GameResult<()> {
     let button_rect = Rect::new(0.0, 0.0, 60.0, 40.0);
@@ -198,7 +229,7 @@ fn add_panel_buttons(
         button_rect.h,
     );
 
-    for (i, component) in components.iter().enumerate() {
+    for (i, (id, component)) in components.iter().enumerate() {
         let desl_x = i as f32 * button_rect.w;
 
         let rect = Rect::new(
@@ -214,9 +245,9 @@ fn add_panel_buttons(
         let button_color_click = Color::new(0.5, 0.9, 0.6, 1.0);
 
         let button = commons::graphics::GuiButton {
-            uid: i as u32,
+            uid: *id,
             bounds: rect,
-            text: component.code.clone(),
+            text: component.to_string(),
             hover: false,
             click: false,
             color: button_color,
@@ -255,21 +286,21 @@ impl EventHandler for App {
             draw_grid(
                 ctx,
                 Point2::new(0.0, 0.0),
-                self.cfg.cell_size,
+                self.cfg.gui.cell_size,
                 // self.get_editor_cell_size(),
-                self.design.size.width,
-                self.design.size.height,
+                self.design.get_width(),
+                self.design.get_height(),
             )?;
 
             // graphics::pop_transform(ctx);
         }
 
         {
-            if let Some((index, coords)) = self.gui.ghost_component {
+            if let Some((id, coords)) = self.gui.ghost_component {
                 let pos = self.get_grid_pos(coords);
-                let img = self.get_component_grid_image_by_index(index)?;
+                let img = self.get_component_grid_image_by_index(id)?;
 
-                graphics::draw(ctx, img, DrawParam::new().dest(pos));
+                graphics::draw(ctx, img, DrawParam::new().dest(pos))?;
             }
         }
 
@@ -284,7 +315,7 @@ impl EventHandler for App {
 
         // gui buttons
         {
-            self.gui.bottom_panel.draw(ctx)?;
+            self.gui.buttons_panel.draw(ctx)?;
         }
 
         // show
@@ -293,7 +324,17 @@ impl EventHandler for App {
 
     fn mouse_button_down_event(&mut self, ctx: &mut Context, button: MouseButton, x: f32, y: f32) {
         if button == MouseButton::Left {
-            self.gui.bottom_panel.on_mouse_down(Point2::new(x, y));
+            if !self.gui.buttons_panel.on_mouse_down(Point2::new(x, y)) {
+                match self.gui.state {
+                    GuiState::ComponentSelected { component_id } => {
+                        let editor_pos = self.get_editor_local_pos(p2(x, y));
+                        if let Some(coords) = self.get_grid_coords(editor_pos) {
+                            self.design.set_component(coords, component_id).unwrap();
+                        }
+                    }
+                    GuiState::Idle => {}
+                }
+            }
         }
     }
 
@@ -301,8 +342,8 @@ impl EventHandler for App {
         let pos = Point2::new(x, y);
 
         if button == MouseButton::Left {
-            if let Some(id) = self.gui.bottom_panel.on_mouse_up(pos) {
-                self.gui.state = GuiState::ComponentSelected { index: id as usize };
+            if let Some(id) = self.gui.buttons_panel.on_mouse_up(pos) {
+                self.gui.state = GuiState::ComponentSelected { component_id: id };
             }
         }
     }
@@ -310,14 +351,19 @@ impl EventHandler for App {
     fn mouse_motion_event(&mut self, ctx: &mut Context, x: f32, y: f32, dx: f32, dy: f32) {
         if ggez::input::mouse::button_pressed(ctx, MouseButton::Right) {
             self.move_screen(Vector2::new(-dx, -dy));
-        } else if self.gui.bottom_panel.on_mouse_move(Point2::new(x, y)) {
+        } else if self.gui.buttons_panel.on_mouse_move(Point2::new(x, y)) {
         } else {
             match self.gui.state {
-                GuiState::ComponentSelected { index } => {
+                GuiState::ComponentSelected { component_id } => {
                     let editor_pos = self.get_editor_local_pos(p2(x, y));
-                    self.gui.ghost_component = self
-                        .get_grid_coords(editor_pos)
-                        .map(|coords| (index, coords));
+                    if let Some(coords) = self.get_grid_coords(editor_pos) {
+                        if ggez::input::mouse::button_pressed(ctx, MouseButton::Left) {
+                            self.design.set_component(coords, component_id).unwrap();
+                        }
+                        self.gui.ghost_component = Some((component_id, coords));
+                    } else {
+                        self.gui.ghost_component = None;
+                    }
                 }
                 GuiState::Idle => {}
             }
@@ -384,15 +430,6 @@ fn draw_grid(
     }
 
     Ok(())
-}
-
-fn load_cfg(body: &str) -> GameResult<(AppCfg, Cfg)> {
-    let value: Value = serde_json::from_str(body).unwrap();
-
-    Ok((
-        serde_json::from_value(value["gui"].clone()).unwrap(),
-        serde_json::from_value(value["game"].clone()).unwrap(),
-    ))
 }
 
 fn main() -> GameResult<()> {

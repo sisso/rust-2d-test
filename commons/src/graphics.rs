@@ -67,10 +67,13 @@ impl GuiManage {
         result
     }
 
-    pub fn on_mouse_down(&mut self, pos: P2) {
+    pub fn on_mouse_down(&mut self, pos: P2) -> bool {
+        let mut result = false;
         for button in &mut self.buttons {
             button.click = button.bounds.contains(pos);
+            result |= button.click;
         }
+        result
     }
 
     pub fn on_mouse_up(&mut self, pos: P2) -> Option<u32> {
