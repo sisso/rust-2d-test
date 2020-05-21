@@ -131,6 +131,15 @@ impl ShipDesign {
     pub fn get_height(&self) -> u32 {
         self.grid.height
     }
+
+    pub fn list_components(&self) -> Vec<Option<&ComponentAt>> {
+        let mut result = vec![];
+        let max = self.grid.width * self.grid.height;
+        for i in 0..max {
+            result.push(self.grid.get(i));
+        }
+        result
+    }
 }
 
 #[derive(Debug, Clone)]

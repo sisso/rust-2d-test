@@ -202,10 +202,7 @@ impl App {
         new_rect
     }
 
-    pub fn get_component_grid_image_by_index(
-        &self,
-        id: ComponentId,
-    ) -> GameResult<&graphics::Image> {
+    pub fn get_component_image_by_id(&self, id: ComponentId) -> GameResult<&graphics::Image> {
         self.gui
             .component_images
             .get(&id)
@@ -280,6 +277,36 @@ impl EventHandler for App {
         graphics::set_screen_coordinates(ctx, editor_area)?;
 
         {
+            let mut images = vec![];
+            for component in &self.design.list_components() {
+                let value = component.map(|component| {
+                    self.get_component_image_by_id(component.component_id)
+                        .unwrap()
+                });
+
+                images.push(value);
+            }
+
+            draw_ship(
+                ctx,
+                Point2::new(0.0, 0.0),
+                self.cfg.gui.cell_size,
+                self.design.get_width(),
+                self.design.get_height(),
+                images,
+            )?;
+        }
+
+        {
+            if let Some((id, coords)) = self.gui.ghost_component {
+                let pos = self.get_grid_pos(coords);
+                let img = self.get_component_image_by_id(id)?;
+
+                graphics::draw(ctx, img, DrawParam::new().dest(pos))?;
+            }
+        }
+
+        {
             // graphics::push_transform(ctx, None);
 
             // graphics::push_transform(ctx, Some(self.editor_transform.get_matrix()));
@@ -287,7 +314,6 @@ impl EventHandler for App {
                 ctx,
                 Point2::new(0.0, 0.0),
                 self.cfg.gui.cell_size,
-                // self.get_editor_cell_size(),
                 self.design.get_width(),
                 self.design.get_height(),
             )?;
@@ -298,7 +324,7 @@ impl EventHandler for App {
         {
             if let Some((id, coords)) = self.gui.ghost_component {
                 let pos = self.get_grid_pos(coords);
-                let img = self.get_component_grid_image_by_index(id)?;
+                let img = self.get_component_image_by_id(id)?;
 
                 graphics::draw(ctx, img, DrawParam::new().dest(pos))?;
             }
@@ -309,7 +335,8 @@ impl EventHandler for App {
         graphics::set_screen_coordinates(ctx, screen_size)?;
 
         {
-            let text = graphics::Text::new(format!("cfg: {:?}", self));
+            let fps = ggez::timer::fps(ctx);
+            let text = graphics::Text::new(format!("fps: {:.0}", fps));
             graphics::draw(ctx, &text, (Point2::new(0.0, 0.0), graphics::WHITE))?;
         }
 
@@ -427,6 +454,32 @@ fn draw_grid(
         let p0 = pos + Vector2::new(0.0, y);
         let p1 = pos + Vector2::new(max_x, y);
         draw_line(ctx, p0, p1, grid_color, grid_width)?;
+    }
+
+    Ok(())
+}
+
+fn draw_ship(
+    ctx: &mut Context,
+    pos: P2,
+    grid_size: f32,
+    width: u32,
+    height: u32,
+    mut images: Vec<Option<&graphics::Image>>,
+) -> GameResult<()> {
+    let mut index = 0;
+    for i in 0..height {
+        for j in 0..width {
+            let comp_image = images.get_mut(index).unwrap();
+            if let Some(image) = comp_image.take() {
+                let x = j as f32 * grid_size + pos.x;
+                let y = i as f32 * grid_size + pos.y;
+                // TODO: can not draw &&image, so we hack with mut and take
+                graphics::draw(ctx, image, DrawParam::new().dest(p2(x, y)))?;
+            }
+
+            index += 1;
+        }
     }
 
     Ok(())
