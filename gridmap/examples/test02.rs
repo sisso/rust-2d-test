@@ -4,7 +4,7 @@ use ggez::conf::WindowMode;
 use ggez::event::{self, EventHandler, KeyCode, KeyMods, MouseButton};
 use ggez::graphics::{Color, DrawParam, Rect};
 use ggez::{filesystem, graphics, input, Context, ContextBuilder, GameError, GameResult};
-use gridmap::{ComponentId, GridCoord, ShipDesign, ShipDesignRepository};
+use gridmap::{ComponentId, ComponentProperties, GridCoord, ShipDesign, ShipDesignRepository};
 use nalgebra::{Point2, Vector2};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -21,6 +21,10 @@ const HEIGHT: f32 = 600.0;
 struct GuiComponentCfg {
     code: String,
     grid_image: String,
+    require_border_back: Option<bool>,
+    require_border_front: Option<bool>,
+    connect_rooms: Option<bool>,
+    connect_outside: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -104,7 +108,14 @@ impl App {
         let mut buttons = vec![(GuiId::Remove, "Clear")];
 
         for comp in &cfg.ship_design.components {
-            let id = repository.add_component_def(comp.code.as_str());
+            let properties = ComponentProperties {
+                require_border_back: comp.require_border_back.unwrap_or(false),
+                require_border_front: comp.require_border_front.unwrap_or(false),
+                connect_rooms: comp.connect_rooms.unwrap_or(false),
+                connect_outside: comp.connect_outside.unwrap_or(false),
+            };
+
+            let id = repository.add_component_def(comp.code.as_str(), properties);
             let image = graphics::Image::new(ctx, comp.grid_image.as_str())?;
             component_images.insert(id, image);
             buttons.push((GuiId::Component(id), comp.code.as_str()));
@@ -239,7 +250,9 @@ impl App {
         let editor_pos = self.get_editor_local_pos(mouse_pos);
         if let Some(coords) = self.get_grid_coords(editor_pos) {
             if enabled {
-                self.design.set_component(coords, component_id).unwrap();
+                self.design
+                    .set_component(&self.repository, coords, component_id)
+                    .unwrap();
             }
             self.gui.ghost_component = component_id.map(|i| (i, coords));
         }

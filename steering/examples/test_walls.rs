@@ -122,7 +122,7 @@ impl EventHandler for App {
         }
 
         {
-            let mut text = graphics::Text::new(debug_text);
+            let text = graphics::Text::new(debug_text);
             graphics::draw(ctx, &text, (Point2::new(0.0, 0.0), graphics::WHITE))?;
         }
 

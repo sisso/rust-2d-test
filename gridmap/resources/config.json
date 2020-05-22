@@ -21,7 +21,7 @@
       {
         "code": "engine",
         "grid_image": "/grid_engine.png",
-        "border_back": true
+        "require_border_back": true
       },
       {
         "code": "corridor",
@@ -30,12 +30,13 @@
       {
         "code": "cockpit",
         "grid_image": "/grid_cockpit.png",
-        "border_front": true
+        "require_border_front": true
       },
       {
         "code": "airlock",
         "grid_image": "/grid_airlock.png",
-        "connect_rooms": true
+        "connect_rooms": true,
+        "connect_outside": true,
       }
     ]
   }
