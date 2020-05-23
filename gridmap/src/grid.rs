@@ -5,6 +5,8 @@
 //     W
 // }
 
+use commons::add_u32;
+
 #[derive(Debug, Clone, Copy, PartialEq, Hash)]
 pub struct GridCoord {
     pub x: u32,
@@ -14,6 +16,13 @@ pub struct GridCoord {
 impl GridCoord {
     pub fn new(x: u32, y: u32) -> Self {
         GridCoord { x, y }
+    }
+
+    pub fn translate(&self, dx: i32, dy: i32) -> Option<GridCoord> {
+        let new_x = add_u32(self.x, dx)?;
+        let new_y = add_u32(self.y, dy)?;
+
+        Some(GridCoord::new(new_x, new_y))
     }
 }
 
@@ -79,6 +88,29 @@ impl<T> Grid<T> {
         coords.y * self.width + coords.x
     }
 
+    pub fn get_neighbours(&self, coords: GridCoord) -> Vec<GridCoord> {
+        let mut result = vec![];
+        for dy in &[-1, 0, 1] {
+            for dx in &[-1, 0, 1] {
+                if *dx == 0 && *dy == 0 {
+                    continue;
+                }
+
+                let new_point = match coords.translate(*dx, *dy) {
+                    None => continue,
+                    Some(v) => v,
+                };
+
+                if new_point.x >= self.width || new_point.y >= self.height {
+                    continue;
+                }
+
+                result.push(new_point);
+            }
+        }
+        result
+    }
+
     pub fn raytrace(&self, pos: GridCoord, dir_x: i32, dir_y: i32) -> Vec<GridCoord> {
         let mut current = pos;
         let mut result = vec![];
@@ -112,7 +144,16 @@ mod test {
 
     #[test]
     pub fn test_grid_get_neighbors() {
-        // TODO
+        let mut grid = Grid::<u32>::new(2, 2);
+        let neighbours = grid.get_neighbours(GridCoord::new(0, 0));
+        assert_eq!(
+            neighbours,
+            vec![
+                GridCoord::new(1, 0),
+                GridCoord::new(0, 1),
+                GridCoord::new(1, 1),
+            ]
+        );
     }
 
     #[test]

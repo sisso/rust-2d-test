@@ -185,6 +185,35 @@ impl ShipDesign {
             }
         }
 
+        if !comp_def.properties.connect_rooms {
+            let neighbours = grid.get_neighbours(coords);
+
+            let mut invalid_neighbours = neighbours.into_iter().flat_map(|other_coord| match grid
+                .get_at(other_coord)
+            {
+                Some(other) if other.component_id != component_id => {
+                    // if is a different component, check if other component connect rooms
+                    if repo
+                        .get_component(other.component_id)
+                        .properties
+                        .connect_rooms
+                    {
+                        None
+                    } else {
+                        Some(other_coord)
+                    }
+                }
+                _ => None,
+            });
+
+            if let Some(invalid) = invalid_neighbours.next() {
+                return Err(ComponentError {
+                    coords,
+                    kind: ComponentErrorKind::BorderOthers,
+                });
+            }
+        }
+
         Ok(())
     }
 
@@ -240,6 +269,13 @@ impl ShipDesignRepository {
     pub fn get_by_code(&self, code: &str) -> Option<&ComponentDef> {
         self.components.iter().find(|comp| comp.code == code)
     }
+
+    pub fn get_id_by_code(&self, code: &str) -> Option<ComponentId> {
+        self.components
+            .iter()
+            .find(|comp| comp.code == code)
+            .map(|comp| comp.id)
+    }
 }
 
 #[cfg(test)]
@@ -257,6 +293,11 @@ mod test {
         let mut properties = ComponentProperties::new();
         properties.require_border_front = true;
         repo.add_component_def("cockpit", properties);
+
+        let mut properties = ComponentProperties::new();
+        properties.connect_rooms = true;
+        properties.connect_outside = true;
+        repo.add_component_def("airlock", properties);
 
         repo
     }
@@ -281,6 +322,33 @@ mod test {
 
         design
             .set_component(&repo, GridCoord::new(1, 0), Some(comp.id))
+            .unwrap();
+    }
+
+    #[test]
+    fn test_set_components_borthers() {
+        let repo = setup();
+        let mut design = ShipDesign::new(4, 4);
+        let engine_id = repo.get_id_by_code("engine").unwrap();
+        let cockpit_id = repo.get_id_by_code("cockpit").unwrap();
+        let airlock_id = repo.get_id_by_code("airlock").unwrap();
+
+        for x in 0..3 {
+            design
+                .set_component(&repo, GridCoord::new(x, 0), Some(engine_id))
+                .unwrap();
+        }
+
+        match design.set_component(&repo, GridCoord::new(3, 0), Some(cockpit_id)) {
+            Err(ComponentError {
+                kind: ComponentErrorKind::BorderOthers,
+                ..
+            }) => {}
+            other => panic!("not expected to work {:?}", other),
+        }
+
+        design
+            .set_component(&repo, GridCoord::new(3, 0), Some(airlock_id))
             .unwrap();
     }
 
