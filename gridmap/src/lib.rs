@@ -32,7 +32,13 @@ pub struct ComponentDef {
 }
 
 #[derive(Debug, Clone)]
-pub enum ComponentError {
+pub struct ComponentError {
+    pub coords: GridCoord,
+    pub kind: ComponentErrorKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum ComponentErrorKind {
     InvalidCoords,
     RequireBackBorder,
     RequireFrontBorder,
@@ -143,7 +149,10 @@ impl ShipDesign {
         coords: GridCoord,
     ) -> Result<(), ComponentError> {
         if !grid.is_valid_coords(coords) {
-            return Err(ComponentError::InvalidCoords);
+            return Err(ComponentError {
+                coords,
+                kind: ComponentErrorKind::InvalidCoords,
+            });
         }
 
         let component_id = match grid.get_at(coords) {
@@ -154,37 +163,43 @@ impl ShipDesign {
         let comp_def = repo.get_component(component_id);
 
         if comp_def.properties.require_border_back {
-            let trace = grid.raytrace(coords, -1, 0);
-            let trace_same: Vec<_> = trace
-                .into_iter()
-                .flat_map(|coord| grid.get_at(coord))
-                .filter(|comp| comp.component_id == component_id)
-                .collect();
-
             // check that goes until back
-            if trace_same.len() as u32 != coords.x {
-                return Err(ComponentError::RequireBackBorder);
+            let amount = ShipDesign::raytrace_by_component(grid, coords, -1, 0, component_id);
+            if amount != coords.x {
+                return Err(ComponentError {
+                    coords,
+                    kind: ComponentErrorKind::RequireBackBorder,
+                });
             }
         }
 
         if comp_def.properties.require_border_front {
-            let trace = grid.raytrace(coords, 1, 0);
-            let trace_same: Vec<_> = trace
-                .into_iter()
-                .flat_map(|coord| grid.get_at(coord))
-                .filter(|comp| comp.component_id == component_id)
-                .collect();
-
-            // // check that goes until back
-            // println!("{:?} {:?}", trace_same.len(), grid.width - coords.x);
-
+            // check if goes until front
+            let amount = ShipDesign::raytrace_by_component(grid, coords, 1, 0, component_id);
             let expected = grid.width - coords.x - 1;
-            if trace_same.len() as u32 != expected {
-                return Err(ComponentError::RequireFrontBorder);
+            if amount != expected {
+                return Err(ComponentError {
+                    coords,
+                    kind: ComponentErrorKind::RequireFrontBorder,
+                });
             }
         }
 
         Ok(())
+    }
+
+    fn raytrace_by_component(
+        grid: &ShipDesignGrid,
+        coords: GridCoord,
+        dir_x: i32,
+        dir_y: i32,
+        component_id: ComponentId,
+    ) -> u32 {
+        grid.raytrace(coords, dir_x, dir_y)
+            .into_iter()
+            .flat_map(|coord| grid.get_at(coord))
+            .filter(|comp| comp.component_id == component_id)
+            .count() as u32
     }
 }
 
@@ -253,7 +268,10 @@ mod test {
         let comp = repo.get_by_code("engine").unwrap();
 
         match design.set_component(&repo, GridCoord::new(1, 0), Some(comp.id)) {
-            Err(ComponentError::RequireBackBorder) => {}
+            Err(ComponentError {
+                kind: ComponentErrorKind::RequireBackBorder,
+                ..
+            }) => {}
             other => panic!("not expected to work {:?}", other),
         }
 
@@ -273,7 +291,10 @@ mod test {
         let comp = repo.get_by_code("cockpit").unwrap();
 
         match design.set_component(&repo, GridCoord::new(1, 0), Some(comp.id)) {
-            Err(ComponentError::RequireFrontBorder) => {}
+            Err(ComponentError {
+                kind: ComponentErrorKind::RequireFrontBorder,
+                ..
+            }) => {}
             other => panic!("not expected to work {:?}", other),
         }
 
@@ -301,7 +322,10 @@ mod test {
             .unwrap();
 
         match design.set_component(&repo, GridCoord::new(0, 0), None) {
-            Err(ComponentError::RequireBackBorder) => {}
+            Err(ComponentError {
+                kind: ComponentErrorKind::RequireBackBorder,
+                ..
+            }) => {}
             other => panic!("not expected to work {:?}", other),
         }
     }

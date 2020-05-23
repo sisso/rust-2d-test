@@ -2,7 +2,7 @@ use approx::assert_relative_eq;
 use commons::math::{self, p2, v2, Transform2, P2, V2};
 use ggez::conf::WindowMode;
 use ggez::event::{self, EventHandler, KeyCode, KeyMods, MouseButton};
-use ggez::graphics::{Color, DrawParam, Rect};
+use ggez::graphics::{Color, DrawMode, DrawParam, Rect};
 use ggez::{filesystem, graphics, input, Context, ContextBuilder, GameError, GameResult};
 use gridmap::{ComponentId, ComponentProperties, GridCoord, ShipDesign, ShipDesignRepository};
 use nalgebra::{Point2, Vector2};
@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::io::Read;
+use std::time::Instant;
 
 // TODO: drag scale proportional of scale
 // TODO: create struct EditorLocalPos ScreenPos
@@ -62,6 +63,7 @@ struct Gui {
     state: GuiState,
     component_images: HashMap<ComponentId, graphics::Image>,
     ghost_component: Option<(ComponentId, GridCoord)>,
+    fail_component: Vec<(Instant, GridCoord)>,
 }
 
 #[derive(Debug)]
@@ -133,6 +135,7 @@ impl App {
             state: GuiState::Idle,
             component_images,
             ghost_component: None,
+            fail_component: vec![],
         };
 
         let app = App {
@@ -255,14 +258,36 @@ impl App {
                     .set_component(&self.repository, coords, component_id)
                 {
                     Ok(_) => {}
-                    Err(e) => eprintln!(
-                        "fail to place {:?} at {:?}: {:?}",
-                        component_id, mouse_pos, e
-                    ),
+                    Err(e) => {
+                        self.gui.fail_component.push((Instant::now(), e.coords));
+
+                        eprintln!(
+                            "fail to place {:?} at {:?}: {:?}",
+                            component_id, mouse_pos, e
+                        )
+                    }
                 }
             }
             self.gui.ghost_component = component_id.map(|i| (i, coords));
         }
+    }
+
+    pub fn draw_cell_outlier(
+        &self,
+        ctx: &mut Context,
+        coords: GridCoord,
+        color: Color,
+    ) -> GameResult<()> {
+        let pos = self.get_grid_pos(coords);
+
+        let mesh = graphics::Mesh::new_rectangle(
+            ctx,
+            DrawMode::stroke(2.0),
+            Rect::new(pos.x, pos.y, self.cfg.gui.cell_size, self.cfg.gui.cell_size),
+            color,
+        )?;
+
+        graphics::draw(ctx, &mesh, DrawParam::default())
     }
 }
 
@@ -319,6 +344,13 @@ fn draw_line(ctx: &mut Context, p0: P2, p1: P2, color: Color, width: f32) -> Gam
 
 impl EventHandler for App {
     fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
+        let now = Instant::now();
+
+        self.gui.fail_component.retain(|(instant, _)| {
+            let delta = now.duration_since(*instant);
+            delta.as_secs() == 0
+        });
+
         Ok(())
     }
 
@@ -380,6 +412,12 @@ impl EventHandler for App {
                 let img = self.get_component_image_by_id(id)?;
 
                 graphics::draw(ctx, img, DrawParam::new().dest(pos))?;
+            }
+        }
+
+        {
+            for (_, coords) in &self.gui.fail_component {
+                self.draw_cell_outlier(ctx, *coords, Color::new(1.0, 0.0, 0.0, 1.0));
             }
         }
 
