@@ -1,6 +1,5 @@
 use crate::grid::Grid;
 pub use crate::grid::GridCoord;
-use serde::{Deserialize, Serialize};
 
 mod grid;
 
@@ -87,6 +86,7 @@ impl ShipDesign {
         self.grid.is_valid_coords(coords)
     }
 
+    // TODO: should check constraintes to remove component
     pub fn set_component(
         &mut self,
         repo: &ShipDesignRepository,
@@ -104,8 +104,33 @@ impl ShipDesign {
                 let comp_def = repo.get_component(component_id);
 
                 if comp_def.properties.require_border_back {
-                    if coords.x > 0 {
+                    let trace = self.grid.raytrace(coords, -1, 0);
+                    let trace_same: Vec<_> = trace
+                        .into_iter()
+                        .flat_map(|coord| self.grid.get_at(coord))
+                        .filter(|comp| comp.component_id == component_id)
+                        .collect();
+
+                    // check that goes until back
+                    if trace_same.len() as u32 != coords.x {
                         return Err(SetComponentError::RequireBackBorder);
+                    }
+                }
+
+                if comp_def.properties.require_border_front {
+                    let trace = self.grid.raytrace(coords, 1, 0);
+                    let trace_same: Vec<_> = trace
+                        .into_iter()
+                        .flat_map(|coord| self.grid.get_at(coord))
+                        .filter(|comp| comp.component_id == component_id)
+                        .collect();
+
+                    // // check that goes until back
+                    // println!("{:?} {:?}", trace_same.len(), self.grid.width - coords.x);
+
+                    let expected = self.grid.width - coords.x - 1;
+                    if trace_same.len() as u32 != expected {
+                        return Err(SetComponentError::RequireFrontBorder);
                     }
                 }
 
@@ -187,9 +212,15 @@ mod test {
 
     fn setup() -> ShipDesignRepository {
         let mut repo = ShipDesignRepository::new();
+
         let mut properties = ComponentProperties::new();
         properties.require_border_back = true;
-        let comp_id = repo.add_component_def("engine", properties);
+        repo.add_component_def("engine", properties);
+
+        let mut properties = ComponentProperties::new();
+        properties.require_border_front = true;
+        repo.add_component_def("cockpit", properties);
+
         repo
     }
 
@@ -210,6 +241,26 @@ mod test {
 
         design
             .set_component(&repo, GridCoord::new(1, 0), Some(comp.id))
+            .unwrap();
+    }
+
+    #[test]
+    fn test_set_cockpit() {
+        let repo = setup();
+        let mut design = ShipDesign::new(4, 4);
+        let comp = repo.get_by_code("cockpit").unwrap();
+
+        match design.set_component(&repo, GridCoord::new(1, 0), Some(comp.id)) {
+            Err(SetComponentError::RequireFrontBorder) => {}
+            other => panic!("not expected to work {:?}", other),
+        }
+
+        design
+            .set_component(&repo, GridCoord::new(3, 0), Some(comp.id))
+            .unwrap();
+
+        design
+            .set_component(&repo, GridCoord::new(2, 0), Some(comp.id))
             .unwrap();
     }
 }

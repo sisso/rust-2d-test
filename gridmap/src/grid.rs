@@ -1,4 +1,11 @@
-#[derive(Debug, Clone, Copy)]
+// pub enum Dir {
+//     N,
+//     S,
+//     E,
+//     W
+// }
+
+#[derive(Debug, Clone, Copy, PartialEq, Hash)]
 pub struct GridCoord {
     pub x: u32,
     pub y: u32,
@@ -6,6 +13,12 @@ pub struct GridCoord {
 
 impl GridCoord {
     pub fn new(x: u32, y: u32) -> Self {
+        GridCoord { x, y }
+    }
+}
+
+impl From<(u32, u32)> for GridCoord {
+    fn from((x, y): (u32, u32)) -> Self {
         GridCoord { x, y }
     }
 }
@@ -31,11 +44,29 @@ impl<T> Grid<T> {
         }
     }
 
+    // TODO: should it exists?
     pub fn set(&mut self, index: u32, value: Option<T>) {
         self.list[index as usize] = value;
     }
 
+    pub fn set_at(&mut self, coord: GridCoord, value: Option<T>) {
+        if !self.is_valid_coords(coord) {
+            panic!("invalid coords {:?}", coord);
+        }
+        let index = self.coords_to_index(coord);
+        self.list[index as usize] = value;
+    }
+
+    // TODO: should it exists?
     pub fn get(&self, index: u32) -> Option<&T> {
+        self.list[index as usize].as_ref()
+    }
+
+    pub fn get_at(&self, coord: GridCoord) -> Option<&T> {
+        if !self.is_valid_coords(coord) {
+            panic!("invalid coords {:?}", coord);
+        }
+        let index = self.coords_to_index(coord);
         self.list[index as usize].as_ref()
     }
 
@@ -43,7 +74,90 @@ impl<T> Grid<T> {
         coords.x < self.width && coords.y < self.height
     }
 
+    // TODO: should return option?
     pub fn coords_to_index(&self, coords: GridCoord) -> u32 {
         coords.y * self.width + coords.x
+    }
+
+    pub fn raytrace(&self, pos: GridCoord, dir_x: i32, dir_y: i32) -> Vec<GridCoord> {
+        let mut current = pos;
+        let mut result = vec![];
+
+        loop {
+            let nx = current.x as i32 + dir_x;
+            let ny = current.y as i32 + dir_y;
+            if nx < 0 || ny < 0 {
+                break;
+            }
+
+            current = (nx as u32, ny as u32).into();
+
+            if !self.is_valid_coords(current) {
+                break;
+            }
+
+            match self.get_at(current) {
+                Some(value) => result.push(current),
+                None => break,
+            }
+        }
+
+        result
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use commons::math::v2;
+
+    #[test]
+    pub fn test_grid_get_neighbors() {
+        // TODO
+    }
+
+    #[test]
+    pub fn test_grid_raytrace() {
+        let mut grid = Grid::<u32>::new(4, 2);
+
+        // X###
+        // ###
+        assert_eq!(grid.raytrace((0, 0).into(), -1, 0), Vec::<GridCoord>::new());
+
+        // #X##
+        // ####
+        assert_eq!(grid.raytrace((1, 0).into(), -1, 0), Vec::<GridCoord>::new());
+
+        // 0###
+        // ####
+        grid.set_at((0, 0).into(), Some(0));
+
+        // 0X##
+        // ####
+        assert_eq!(grid.raytrace((1, 0).into(), -1, 0), vec![(0, 0).into()]);
+
+        // 00##
+        // ####
+        grid.set_at((1, 0).into(), Some(0));
+
+        // 00X#
+        // ####
+        assert_eq!(
+            grid.raytrace((2, 0).into(), -1, 0),
+            vec![(1, 0).into(), (0, 0).into()]
+        );
+
+        // 00#X
+        // ####
+        assert_eq!(grid.raytrace((3, 0).into(), -1, 0), vec![]);
+
+        // X0##
+        // ####
+        assert_eq!(grid.raytrace((0, 0).into(), 1, 0), vec![(1, 0).into()]);
+    }
+
+    #[test]
+    pub fn test_grid_group() {
+        // TODO
     }
 }

@@ -250,9 +250,16 @@ impl App {
         let editor_pos = self.get_editor_local_pos(mouse_pos);
         if let Some(coords) = self.get_grid_coords(editor_pos) {
             if enabled {
-                self.design
+                match self
+                    .design
                     .set_component(&self.repository, coords, component_id)
-                    .unwrap();
+                {
+                    Ok(_) => {}
+                    Err(e) => eprintln!(
+                        "fail to place {:?} at {:?}: {:?}",
+                        component_id, mouse_pos, e
+                    ),
+                }
             }
             self.gui.ghost_component = component_id.map(|i| (i, coords));
         }
