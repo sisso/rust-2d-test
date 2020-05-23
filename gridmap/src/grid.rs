@@ -109,7 +109,6 @@ impl<T> Grid<T> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use commons::math::v2;
 
     #[test]
     pub fn test_grid_get_neighbors() {

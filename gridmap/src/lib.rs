@@ -66,7 +66,7 @@ impl Size {
 
 #[derive(Debug, Clone)]
 pub struct ComponentAt {
-    pub index: u32,
+    pub coords: GridCoord,
     pub component_id: ComponentId,
 }
 
@@ -86,18 +86,50 @@ impl ShipDesign {
         self.grid.is_valid_coords(coords)
     }
 
-    // TODO: should check constraintes to remove component
     pub fn set_component(
         &mut self,
         repo: &ShipDesignRepository,
         coords: GridCoord,
         component_id: Option<ComponentId>,
     ) -> std::result::Result<(), SetComponentError> {
-        if !self.is_valid_coords(coords) {
+        self.is_valid(repo, coords, component_id)?;
+
+        let value = component_id.map(|component_id| ComponentAt {
+            coords,
+            component_id,
+        });
+
+        self.grid.set_at(coords, value);
+
+        Ok(())
+    }
+
+    pub fn get_width(&self) -> u32 {
+        self.grid.width
+    }
+
+    pub fn get_height(&self) -> u32 {
+        self.grid.height
+    }
+
+    pub fn list_components(&self) -> Vec<Option<&ComponentAt>> {
+        let mut result = vec![];
+        let max = self.grid.width * self.grid.height;
+        for i in 0..max {
+            result.push(self.grid.get(i));
+        }
+        result
+    }
+
+    fn is_valid(
+        &self,
+        repo: &ShipDesignRepository,
+        coords: GridCoord,
+        component_id: Option<ComponentId>,
+    ) -> Result<(), SetComponentError> {
+        if !self.grid.is_valid_coords(coords) {
             return Err(SetComponentError::InvalidIndex);
         }
-
-        let index = self.grid.coords_to_index(coords);
 
         match component_id {
             Some(component_id) => {
@@ -134,35 +166,10 @@ impl ShipDesign {
                     }
                 }
 
-                let value = ComponentAt {
-                    index,
-                    component_id,
-                };
-                self.grid.set(index, Some(value));
+                Ok(())
             }
-            None => {
-                self.grid.set(index, None);
-            }
+            None => Ok(()),
         }
-
-        Ok(())
-    }
-
-    pub fn get_width(&self) -> u32 {
-        self.grid.width
-    }
-
-    pub fn get_height(&self) -> u32 {
-        self.grid.height
-    }
-
-    pub fn list_components(&self) -> Vec<Option<&ComponentAt>> {
-        let mut result = vec![];
-        let max = self.grid.width * self.grid.height;
-        for i in 0..max {
-            result.push(self.grid.get(i));
-        }
-        result
     }
 }
 
