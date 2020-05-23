@@ -32,8 +32,8 @@ pub struct ComponentDef {
 }
 
 #[derive(Debug, Clone)]
-pub enum SetComponentError {
-    InvalidIndex,
+pub enum ComponentError {
+    InvalidCoords,
     RequireBackBorder,
     RequireFrontBorder,
     BorderOutside,
@@ -70,9 +70,11 @@ pub struct ComponentAt {
     pub component_id: ComponentId,
 }
 
+type ShipDesignGrid = Grid<ComponentAt>;
+
 #[derive(Debug, Clone)]
 pub struct ShipDesign {
-    pub grid: Grid<ComponentAt>,
+    pub grid: ShipDesignGrid,
 }
 
 impl ShipDesign {
@@ -91,15 +93,18 @@ impl ShipDesign {
         repo: &ShipDesignRepository,
         coords: GridCoord,
         component_id: Option<ComponentId>,
-    ) -> std::result::Result<(), SetComponentError> {
-        self.is_valid(repo, coords, component_id)?;
-
+    ) -> std::result::Result<(), ComponentError> {
         let value = component_id.map(|component_id| ComponentAt {
             coords,
             component_id,
         });
 
-        self.grid.set_at(coords, value);
+        let mut new_grid = self.grid.clone();
+        new_grid.set_at(coords, value);
+
+        ShipDesign::is_valid(&new_grid, repo)?;
+
+        self.grid = new_grid;
 
         Ok(())
     }
@@ -121,55 +126,65 @@ impl ShipDesign {
         result
     }
 
-    fn is_valid(
-        &self,
+    fn is_valid(grid: &ShipDesignGrid, repo: &ShipDesignRepository) -> Result<(), ComponentError> {
+        for j in 0..grid.height {
+            for i in 0..grid.width {
+                let coords = (i, j).into();
+                ShipDesign::is_valid_cell(grid, repo, coords)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn is_valid_cell(
+        grid: &ShipDesignGrid,
         repo: &ShipDesignRepository,
         coords: GridCoord,
-        component_id: Option<ComponentId>,
-    ) -> Result<(), SetComponentError> {
-        if !self.grid.is_valid_coords(coords) {
-            return Err(SetComponentError::InvalidIndex);
+    ) -> Result<(), ComponentError> {
+        if !grid.is_valid_coords(coords) {
+            return Err(ComponentError::InvalidCoords);
         }
 
-        match component_id {
-            Some(component_id) => {
-                let comp_def = repo.get_component(component_id);
+        let component_id = match grid.get_at(coords) {
+            Some(v) => v.component_id,
+            _ => return Ok(()),
+        };
 
-                if comp_def.properties.require_border_back {
-                    let trace = self.grid.raytrace(coords, -1, 0);
-                    let trace_same: Vec<_> = trace
-                        .into_iter()
-                        .flat_map(|coord| self.grid.get_at(coord))
-                        .filter(|comp| comp.component_id == component_id)
-                        .collect();
+        let comp_def = repo.get_component(component_id);
 
-                    // check that goes until back
-                    if trace_same.len() as u32 != coords.x {
-                        return Err(SetComponentError::RequireBackBorder);
-                    }
-                }
+        if comp_def.properties.require_border_back {
+            let trace = grid.raytrace(coords, -1, 0);
+            let trace_same: Vec<_> = trace
+                .into_iter()
+                .flat_map(|coord| grid.get_at(coord))
+                .filter(|comp| comp.component_id == component_id)
+                .collect();
 
-                if comp_def.properties.require_border_front {
-                    let trace = self.grid.raytrace(coords, 1, 0);
-                    let trace_same: Vec<_> = trace
-                        .into_iter()
-                        .flat_map(|coord| self.grid.get_at(coord))
-                        .filter(|comp| comp.component_id == component_id)
-                        .collect();
-
-                    // // check that goes until back
-                    // println!("{:?} {:?}", trace_same.len(), self.grid.width - coords.x);
-
-                    let expected = self.grid.width - coords.x - 1;
-                    if trace_same.len() as u32 != expected {
-                        return Err(SetComponentError::RequireFrontBorder);
-                    }
-                }
-
-                Ok(())
+            // check that goes until back
+            if trace_same.len() as u32 != coords.x {
+                return Err(ComponentError::RequireBackBorder);
             }
-            None => Ok(()),
         }
+
+        if comp_def.properties.require_border_front {
+            let trace = grid.raytrace(coords, 1, 0);
+            let trace_same: Vec<_> = trace
+                .into_iter()
+                .flat_map(|coord| grid.get_at(coord))
+                .filter(|comp| comp.component_id == component_id)
+                .collect();
+
+            // // check that goes until back
+            // println!("{:?} {:?}", trace_same.len(), grid.width - coords.x);
+
+            let expected = grid.width - coords.x - 1;
+            if trace_same.len() as u32 != expected {
+                return Err(ComponentError::RequireFrontBorder);
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -238,7 +253,7 @@ mod test {
         let comp = repo.get_by_code("engine").unwrap();
 
         match design.set_component(&repo, GridCoord::new(1, 0), Some(comp.id)) {
-            Err(SetComponentError::RequireBackBorder) => {}
+            Err(ComponentError::RequireBackBorder) => {}
             other => panic!("not expected to work {:?}", other),
         }
 
@@ -258,7 +273,7 @@ mod test {
         let comp = repo.get_by_code("cockpit").unwrap();
 
         match design.set_component(&repo, GridCoord::new(1, 0), Some(comp.id)) {
-            Err(SetComponentError::RequireFrontBorder) => {}
+            Err(ComponentError::RequireFrontBorder) => {}
             other => panic!("not expected to work {:?}", other),
         }
 
@@ -269,5 +284,25 @@ mod test {
         design
             .set_component(&repo, GridCoord::new(2, 0), Some(comp.id))
             .unwrap();
+    }
+
+    #[test]
+    fn test_remove_component_should_check_for_constraints() {
+        let repo = setup();
+        let mut design = ShipDesign::new(3, 3);
+        let comp = repo.get_by_code("engine").unwrap();
+
+        design
+            .set_component(&repo, GridCoord::new(0, 0), Some(comp.id))
+            .unwrap();
+
+        design
+            .set_component(&repo, GridCoord::new(1, 0), Some(comp.id))
+            .unwrap();
+
+        match design.set_component(&repo, GridCoord::new(0, 0), None) {
+            Err(ComponentError::RequireBackBorder) => {}
+            other => panic!("not expected to work {:?}", other),
+        }
     }
 }
