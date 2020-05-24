@@ -42,8 +42,8 @@ pub enum ComponentErrorKind {
     InvalidCoords,
     RequireBackBorder,
     RequireFrontBorder,
-    BorderOutside,
     BorderOthers,
+    BorderExternal,
 }
 
 #[derive(Debug, Clone)]
@@ -161,6 +161,29 @@ impl ShipDesign {
         };
 
         let comp_def = repo.get_component(component_id);
+
+        if !comp_def.properties.connect_outside {
+            if coords.y == 0 || coords.y == grid.height - 1 {
+                return Err(ComponentError {
+                    coords,
+                    kind: ComponentErrorKind::BorderExternal,
+                });
+            }
+
+            if coords.x == 0 && !comp_def.properties.require_border_back {
+                return Err(ComponentError {
+                    coords,
+                    kind: ComponentErrorKind::BorderExternal,
+                });
+            }
+
+            if coords.x == grid.width - 1 && !comp_def.properties.require_border_front {
+                return Err(ComponentError {
+                    coords,
+                    kind: ComponentErrorKind::BorderExternal,
+                });
+            }
+        }
 
         if comp_def.properties.require_border_back {
             // check that goes until back
@@ -308,7 +331,7 @@ mod test {
         let mut design = ShipDesign::new(4, 4);
         let comp = repo.get_by_code("engine").unwrap();
 
-        match design.set_component(&repo, GridCoord::new(1, 0), Some(comp.id)) {
+        match design.set_component(&repo, GridCoord::new(1, 1), Some(comp.id)) {
             Err(ComponentError {
                 kind: ComponentErrorKind::RequireBackBorder,
                 ..
@@ -317,16 +340,16 @@ mod test {
         }
 
         design
-            .set_component(&repo, GridCoord::new(0, 0), Some(comp.id))
+            .set_component(&repo, GridCoord::new(0, 1), Some(comp.id))
             .unwrap();
 
         design
-            .set_component(&repo, GridCoord::new(1, 0), Some(comp.id))
+            .set_component(&repo, GridCoord::new(1, 1), Some(comp.id))
             .unwrap();
     }
 
     #[test]
-    fn test_set_components_borthers() {
+    fn test_set_components_borders_between_components() {
         let repo = setup();
         let mut design = ShipDesign::new(4, 4);
         let engine_id = repo.get_id_by_code("engine").unwrap();
@@ -335,11 +358,11 @@ mod test {
 
         for x in 0..3 {
             design
-                .set_component(&repo, GridCoord::new(x, 0), Some(engine_id))
+                .set_component(&repo, GridCoord::new(x, 1), Some(engine_id))
                 .unwrap();
         }
 
-        match design.set_component(&repo, GridCoord::new(3, 0), Some(cockpit_id)) {
+        match design.set_component(&repo, GridCoord::new(3, 1), Some(cockpit_id)) {
             Err(ComponentError {
                 kind: ComponentErrorKind::BorderOthers,
                 ..
@@ -348,7 +371,29 @@ mod test {
         }
 
         design
-            .set_component(&repo, GridCoord::new(3, 0), Some(airlock_id))
+            .set_component(&repo, GridCoord::new(3, 1), Some(airlock_id))
+            .unwrap();
+    }
+
+    #[test]
+    fn test_set_components_borders() {
+        let repo = setup();
+        let mut design = ShipDesign::new(4, 4);
+        let engine_id = repo.get_id_by_code("engine").unwrap();
+        let airlock_id = repo.get_id_by_code("airlock").unwrap();
+
+        for (x, y) in &[(0, 0), (0, 3)] {
+            match design.set_component(&repo, GridCoord::new(*x, *y), Some(engine_id)) {
+                Err(ComponentError {
+                    kind: ComponentErrorKind::BorderExternal,
+                    ..
+                }) => {}
+                other => panic!("not expected to work {:?}", other),
+            }
+        }
+
+        design
+            .set_component(&repo, GridCoord::new(2, 0), Some(airlock_id))
             .unwrap();
     }
 
@@ -358,7 +403,7 @@ mod test {
         let mut design = ShipDesign::new(4, 4);
         let comp = repo.get_by_code("cockpit").unwrap();
 
-        match design.set_component(&repo, GridCoord::new(1, 0), Some(comp.id)) {
+        match design.set_component(&repo, GridCoord::new(1, 1), Some(comp.id)) {
             Err(ComponentError {
                 kind: ComponentErrorKind::RequireFrontBorder,
                 ..
@@ -367,11 +412,11 @@ mod test {
         }
 
         design
-            .set_component(&repo, GridCoord::new(3, 0), Some(comp.id))
+            .set_component(&repo, GridCoord::new(3, 1), Some(comp.id))
             .unwrap();
 
         design
-            .set_component(&repo, GridCoord::new(2, 0), Some(comp.id))
+            .set_component(&repo, GridCoord::new(2, 1), Some(comp.id))
             .unwrap();
     }
 
@@ -382,14 +427,14 @@ mod test {
         let comp = repo.get_by_code("engine").unwrap();
 
         design
-            .set_component(&repo, GridCoord::new(0, 0), Some(comp.id))
+            .set_component(&repo, GridCoord::new(0, 1), Some(comp.id))
             .unwrap();
 
         design
-            .set_component(&repo, GridCoord::new(1, 0), Some(comp.id))
+            .set_component(&repo, GridCoord::new(1, 1), Some(comp.id))
             .unwrap();
 
-        match design.set_component(&repo, GridCoord::new(0, 0), None) {
+        match design.set_component(&repo, GridCoord::new(0, 1), None) {
             Err(ComponentError {
                 kind: ComponentErrorKind::RequireBackBorder,
                 ..
