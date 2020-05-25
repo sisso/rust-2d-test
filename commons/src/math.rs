@@ -123,12 +123,20 @@ pub fn inverse_lerp(v0: f32, v1: f32, t: f32) -> f32 {
 }
 
 ///
-/// Lerp between v0 and v1 giving the value of 5 between t0 and t1
+/// Lerp between v0 and v1 giving the value of t between t0 and t1
 ///
 /// t <= t0, returns v0
 /// t >= t1, returns v1
 ///
+/// TODO: use map_value where t (change arguments order)
+#[deprecated()]
 pub fn lerp_2(v0: f32, v1: f32, t0: f32, t1: f32, t: f32) -> f32 {
+    let tt = inverse_lerp(t0, t1, t);
+    lerp(v0, v1, tt)
+}
+
+/// Lerp the value t between t0 and t1 into v0 and v1
+pub fn map_value(t: f32, t0: f32, t1: f32, v0: f32, v1: f32) -> f32 {
     let tt = inverse_lerp(t0, t1, t);
     lerp(v0, v1, tt)
 }

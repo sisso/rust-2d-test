@@ -52,7 +52,7 @@ impl EventHandler for App {
         let text = graphics::Text::new(format!("cfg: {:?}", self));
         graphics::draw(ctx, &text, (Point2::new(0.0, 0.0), graphics::WHITE))?;
 
-        self.gui.draw(ctx);
+        self.gui.draw(ctx)?;
         graphics::present(ctx)
     }
 
