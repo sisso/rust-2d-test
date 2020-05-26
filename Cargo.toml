@@ -10,4 +10,5 @@ members = [
     "gridmap",
     "gui",
     "planets",
+    "test-imgui",
 ]
