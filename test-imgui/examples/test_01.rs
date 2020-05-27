@@ -3,11 +3,13 @@ use ggez::event::{self, EventHandler, KeyCode, KeyMods, MouseButton};
 use ggez::graphics;
 use ggez::nalgebra as na;
 use ggez::{Context, GameResult};
+use imgui::ImString;
 use test_imgui::imgui_wrapper::ImGuiWrapper;
 
 struct MainState {
     pos_x: f32,
     imgui_wrapper: ImGuiWrapper,
+    buffer: ImString,
 }
 
 impl MainState {
@@ -16,6 +18,7 @@ impl MainState {
         let s = MainState {
             pos_x: 0.0,
             imgui_wrapper,
+            buffer: Default::default(),
         };
         Ok(s)
     }
@@ -24,6 +27,7 @@ impl MainState {
         use imgui::*;
 
         let show_popup = false;
+        let buffer = &mut self.buffer;
 
         self.imgui_wrapper.render(ctx, 1.0, |ui| {
             // Various ui things
@@ -42,6 +46,13 @@ impl MainState {
                             mouse_pos[0],
                             mouse_pos[1]
                         ));
+                        ui.separator();
+                        let mut value = 0.0;
+                        ui.input_float(im_str!("Text:"), &mut value).build();
+                        ui.separator();
+                        // ui.input_text_multiline(im_str!("Text:"), buffer, [200.0, 80.0])
+                        //     .build();
+                        // ui.separator();
 
                         if ui.small_button(im_str!("small button")) {
                             println!("Small button clicked");
@@ -163,6 +174,12 @@ impl EventHandler for MainState {
             KeyCode::P => {}
             _ => (),
         }
+
+        self.imgui_wrapper.update_key_down(keycode);
+    }
+
+    fn key_up_event(&mut self, _ctx: &mut Context, keycode: KeyCode, _keymods: KeyMods) {
+        self.imgui_wrapper.update_key_up(keycode);
     }
 }
 

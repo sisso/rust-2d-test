@@ -9,6 +9,7 @@ use gfx_device_gl;
 use imgui::*;
 use imgui_gfx_renderer::*;
 
+use ggez::event::KeyCode;
 use std::time::Instant;
 
 #[derive(Copy, Clone, PartialEq, Debug, Default)]
@@ -51,6 +52,40 @@ impl ImGuiWrapper {
 
         // Renderer
         let mut renderer = Renderer::init(&mut imgui, &mut *factory, shaders).unwrap();
+
+        {
+            // TODO: not working, for some reason Key::$key is invalid
+            macro_rules! map_keys {
+                ( $( $key:expr ),* ) => {
+                    $(
+                        io.key_map[Key::$key as usize] = KeyCode::$key as u32;
+                    )*
+                };
+            }
+
+            let mut io = imgui.io_mut();
+            io.key_map[Key::Tab as usize] = KeyCode::Tab as u32;
+            io.key_map[Key::LeftArrow as usize] = KeyCode::Left as u32;
+            io.key_map[Key::RightArrow as usize] = KeyCode::Right as u32;
+            io.key_map[Key::UpArrow as usize] = KeyCode::Up as u32;
+            io.key_map[Key::DownArrow as usize] = KeyCode::Down as u32;
+            io.key_map[Key::PageUp as usize] = KeyCode::PageUp as u32;
+            io.key_map[Key::PageDown as usize] = KeyCode::PageDown as u32;
+            io.key_map[Key::Home as usize] = KeyCode::Home as u32;
+            io.key_map[Key::End as usize] = KeyCode::End as u32;
+            io.key_map[Key::Delete as usize] = KeyCode::Delete as u32;
+            io.key_map[Key::Backspace as usize] = KeyCode::Back as u32;
+            io.key_map[Key::Enter as usize] = KeyCode::Return as u32;
+            io.key_map[Key::Escape as usize] = KeyCode::Escape as u32;
+            io.key_map[Key::Space as usize] = KeyCode::Space as u32;
+            // map_keys![A, B, C, V, X, Y, Z];
+            io.key_map[Key::A as usize] = KeyCode::A as u32;
+            io.key_map[Key::C as usize] = KeyCode::C as u32;
+            io.key_map[Key::V as usize] = KeyCode::V as u32;
+            io.key_map[Key::X as usize] = KeyCode::X as u32;
+            io.key_map[Key::Y as usize] = KeyCode::Y as u32;
+            io.key_map[Key::Z as usize] = KeyCode::Z as u32;
+        }
 
         // Create instace
         Self {
@@ -117,5 +152,15 @@ impl ImGuiWrapper {
 
     pub fn update_mouse_down(&mut self, pressed: (bool, bool, bool)) {
         self.mouse_state.pressed = pressed;
+    }
+
+    pub fn update_key_down(&mut self, key: KeyCode) {
+        let keys = &mut self.imgui.io_mut().keys_down;
+        keys[key as usize] = true;
+    }
+
+    pub fn update_key_up(&mut self, key: KeyCode) {
+        let keys = &mut self.imgui.io_mut().keys_down;
+        keys[key as usize] = false;
     }
 }
