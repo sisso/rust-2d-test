@@ -10,6 +10,7 @@ struct MainState {
     pos_x: f32,
     imgui_wrapper: ImGuiWrapper,
     buffer: ImString,
+    value: f32,
 }
 
 impl MainState {
@@ -19,6 +20,7 @@ impl MainState {
             pos_x: 0.0,
             imgui_wrapper,
             buffer: Default::default(),
+            value: 0.0,
         };
         Ok(s)
     }
@@ -28,14 +30,15 @@ impl MainState {
 
         let show_popup = false;
         let buffer = &mut self.buffer;
+        let value = &mut self.value;
 
         self.imgui_wrapper.render(ctx, 1.0, |ui| {
             // Various ui things
             {
                 // Window
                 ui.window(im_str!("Hello world"))
-                    .size([300.0, 600.0], imgui::Condition::FirstUseEver)
-                    .position([100.0, 100.0], imgui::Condition::FirstUseEver)
+                    .size([300.0, 600.0], imgui::Condition::Always)
+                    .position([100.0, 100.0], imgui::Condition::Always)
                     .build(|| {
                         ui.text(im_str!("Hello world!"));
                         ui.text(im_str!("This...is...imgui-rs!"));
@@ -47,8 +50,8 @@ impl MainState {
                             mouse_pos[1]
                         ));
                         ui.separator();
-                        let mut value = 0.0;
-                        ui.input_float(im_str!("Text:"), &mut value).build();
+                        if ui.input_float(im_str!("Value:"), value).build() {}
+                        if ui.input_text(im_str!("Text:"), buffer).build() {}
                         ui.separator();
                         // ui.input_text_multiline(im_str!("Text:"), buffer, [200.0, 80.0])
                         //     .build();
@@ -170,12 +173,11 @@ impl EventHandler for MainState {
         _keymods: KeyMods,
         _repeat: bool,
     ) {
-        match keycode {
-            KeyCode::P => {}
-            _ => (),
-        }
-
         self.imgui_wrapper.update_key_down(keycode);
+    }
+
+    fn text_input_event(&mut self, _ctx: &mut Context, character: char) {
+        self.imgui_wrapper.update_key_char(character);
     }
 
     fn key_up_event(&mut self, _ctx: &mut Context, keycode: KeyCode, _keymods: KeyMods) {

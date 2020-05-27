@@ -79,12 +79,12 @@ impl ImGuiWrapper {
             io.key_map[Key::Escape as usize] = KeyCode::Escape as u32;
             io.key_map[Key::Space as usize] = KeyCode::Space as u32;
             // map_keys![A, B, C, V, X, Y, Z];
-            io.key_map[Key::A as usize] = KeyCode::A as u32;
-            io.key_map[Key::C as usize] = KeyCode::C as u32;
-            io.key_map[Key::V as usize] = KeyCode::V as u32;
-            io.key_map[Key::X as usize] = KeyCode::X as u32;
-            io.key_map[Key::Y as usize] = KeyCode::Y as u32;
-            io.key_map[Key::Z as usize] = KeyCode::Z as u32;
+            // io.key_map[Key::A as usize] = KeyCode::A as u32;
+            // io.key_map[Key::C as usize] = KeyCode::C as u32;
+            // io.key_map[Key::V as usize] = KeyCode::V as u32;
+            // io.key_map[Key::X as usize] = KeyCode::X as u32;
+            // io.key_map[Key::Y as usize] = KeyCode::Y as u32;
+            // io.key_map[Key::Z as usize] = KeyCode::Z as u32;
         }
 
         // Create instace
@@ -154,13 +154,30 @@ impl ImGuiWrapper {
         self.mouse_state.pressed = pressed;
     }
 
+    pub fn update_key_char(&mut self, key: char) {
+        println!("update {:?}", key);
+        self.imgui.io_mut().add_input_character(key);
+    }
+
     pub fn update_key_down(&mut self, key: KeyCode) {
-        let keys = &mut self.imgui.io_mut().keys_down;
-        keys[key as usize] = true;
+        match key {
+            KeyCode::Back => self.imgui.io_mut().keys_down[Key::Backspace as usize] = true,
+            _ => {}
+        }
+
+        // self.imgui.io_mut().
+        // let keys = &mut self.imgui.io_mut().keys_down;
+        // keys[key as usize] = true;
+        // // self.imgui.io_mut().add_input_character(key);
+        // match key {
+        //     KeyCode::Key1 => self.imgui.io_mut().add_input_character('1'),
+        //     KeyCode::A => self.imgui.io_mut().add_input_character('a'),
+        //     _ => {}
+        // }
     }
 
     pub fn update_key_up(&mut self, key: KeyCode) {
-        let keys = &mut self.imgui.io_mut().keys_down;
-        keys[key as usize] = false;
+        // let keys = &mut self.imgui.io_mut().keys_down;
+        // keys[key as usize] = false;
     }
 }
