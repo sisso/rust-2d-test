@@ -1,4 +1,4 @@
-use commons::math::{lerp_2, map_value, p2, v2, P2, PI, V2};
+use commons::math::{lerp_2, map_value, p2, v2, P2, PI, TWO_PI, V2};
 use ggez::conf::WindowMode;
 use ggez::event::{self, EventHandler, KeyCode, KeyMods, MouseButton};
 use ggez::graphics::{Color, DrawMode, DrawParam, Rect};
@@ -25,26 +25,22 @@ impl App {
 }
 
 fn draw_planet(app: &mut App, ctx: &mut Context, pos: P2, radius: f32) -> GameResult<()> {
-    let mesh = graphics::Mesh::new_circle(
-        ctx,
-        DrawMode::stroke(1.0),
-        pos,
-        radius,
-        1.0,
-        graphics::WHITE,
-    )?;
-    graphics::draw(ctx, &mesh, DrawParam::default())?;
-
     let mut mb = graphics::MeshBuilder::new();
     let segments = 50;
-    let per_segment = 2.0 * PI / segments as f32;
+    let per_segment_angle = TWO_PI / segments as f32;
+    let noise_radius = 2.0;
+
     let mut points = vec![];
     for i in 0..segments {
-        let nois_pos = [i as f64 * 0.25, app.seed];
+        let angle = i as f32 * per_segment_angle;
+
+        let x = angle.cos() * noise_radius;
+        let y = angle.sin() * noise_radius;
+
+        let nois_pos = [x as f64, y as f64, app.seed];
         let noise = app.noise.get(nois_pos) as f32;
         let current_radius = map_value(noise, -1.0, 1.0, radius * 0.8, radius * 1.25);
-        // println!("{:?} {:?}", noise, current_radius);
-        let angle = i as f32 * per_segment;
+
         let x = angle.cos() * current_radius + pos.x;
         let y = angle.sin() * current_radius + pos.y;
         points.push(p2(x, y));

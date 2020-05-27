@@ -8,6 +8,7 @@ pub type V2 = Vector2<f32>;
 pub type Sim2 = Similarity2<f32>;
 pub type M4 = Matrix4<f32>;
 pub const PI: f32 = std::f32::consts::PI;
+pub const TWO_PI: f32 = 2.0 * std::f32::consts::PI;
 
 pub fn v2(x: f32, y: f32) -> V2 {
     Vector2::new(x, y)
