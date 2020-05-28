@@ -5,6 +5,8 @@ use ggez::graphics::{Color, DrawMode, DrawParam, Rect};
 use ggez::{graphics, Context, ContextBuilder, GameResult};
 use nalgebra::{Point2, Vector2};
 use noise::{NoiseFn, Perlin};
+use rand::prelude::StdRng;
+use rand::{Rng, SeedableRng};
 
 const WIDTH: f32 = 800.0;
 const HEIGHT: f32 = 600.0;
@@ -25,6 +27,7 @@ impl App {
 }
 
 fn draw_planet(app: &mut App, ctx: &mut Context, pos: P2, radius: f32) -> GameResult<()> {
+    let mut rng: StdRng = SeedableRng::seed_from_u64(app.seed as u64);
     let mut mb = graphics::MeshBuilder::new();
     let segments = 50;
     let per_segment_angle = TWO_PI / segments as f32;
@@ -56,6 +59,26 @@ fn draw_planet(app: &mut App, ctx: &mut Context, pos: P2, radius: f32) -> GameRe
 
     let mesh = mb.build(ctx)?;
     graphics::draw(ctx, &mesh, DrawParam::default())?;
+
+    for i in 0..3 {
+        let angle = rng.gen_range(0.0, TWO_PI);
+        let distance = rng.gen_range(radius * 0.7, radius * 0.9);
+        let size = radius - distance;
+
+        let x = angle.cos() * distance + pos.x;
+        let y = angle.sin() * distance + pos.y;
+
+        let circle = graphics::Mesh::new_circle(
+            ctx,
+            DrawMode::stroke(1.0),
+            p2(x, y),
+            size,
+            1.0,
+            Color::new(0.0, 0.0, 1.0, 1.0),
+        )?;
+
+        graphics::draw(ctx, &circle, DrawParam::default())?;
+    }
 
     Ok(())
 }
