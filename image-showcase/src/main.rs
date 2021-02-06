@@ -1,11 +1,18 @@
 use cgmath;
 use ggez::conf::WindowMode;
 use ggez::event::{self, EventHandler, KeyCode};
+use ggez::filesystem::print_all;
 use ggez::graphics::Image;
 use ggez::{graphics, Context, ContextBuilder, GameResult};
+use image::RgbaImage;
 use rand::Rng;
+use std::borrow::Borrow;
 use std::env;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::{Duration, Instant};
 
 fn main() -> GameResult<()> {
     let mut window_mode: WindowMode = Default::default();
@@ -14,16 +21,10 @@ fn main() -> GameResult<()> {
     window_mode.height = 1024.0;
 
     let (mut ctx, mut event_loop) = ContextBuilder::new("Image showcase", "Someone")
-        // .add_resource_path(resource_dir)
         .window_mode(window_mode)
         .build()
         .expect("aieee, could not create ggez context!");
 
-    // let root_path = if env::vars().find(|k,v| )args().len() < 1 {
-    //     env::home_dir().expect("user folder not found")
-    // }
-
-    // TODO: require a proper argument parser
     let root_path = match env::args().nth(1) {
         Some(path) => path,
         None => format!(
@@ -47,71 +48,81 @@ fn main() -> GameResult<()> {
     }
 }
 
+type ImageRef = Arc<Mutex<Option<RgbaImage>>>;
+
 struct App {
     current_image: graphics::Image,
-    next_image: graphics::Image,
+    next_image: ImageRef,
     point: cgmath::Point2<f32>,
     scale: cgmath::Vector2<f32>,
     rotation: f32,
     images: Vec<PathBuf>,
-    swtich_delay: bool,
+    ignore_keys_until: usize,
 }
 
 impl App {
     pub fn new(ctx: &mut Context, root: &Path) -> GameResult<App> {
         let images = find_images(root)?;
+
         let current_image = load_random_image(ctx, &images)?;
-        let next_image = load_random_image(ctx, &images)?;
+
+        let next_image_path = &images[choose(images.len())];
+        let next_image_ref = Arc::new(Mutex::new(None));
+        load_image_async(next_image_path, next_image_ref.clone());
 
         let point = cgmath::Point2::new(0.0, 0.0);
         let scale = cgmath::Vector2::new(0.25, 0.25);
         let rotation = 0.0;
+
         let game = App {
             current_image: current_image,
-            next_image: next_image,
+            next_image: next_image_ref,
             point,
             scale,
             rotation,
             images,
-            swtich_delay: false,
+            ignore_keys_until: 0,
         };
         Ok(game)
     }
 
     fn load_next_image(&mut self, ctx: &mut Context) -> GameResult<()> {
-        std::mem::swap(&mut self.current_image, &mut self.next_image);
-        self.next_image = load_random_image(ctx, &self.images)?;
+        // get next image if is already loaded
+        let mut image_ref = self.next_image.deref().lock().unwrap();
+        let image_rgb = match image_ref.take() {
+            Some(image) => image,
+            _ => return Ok(()),
+        };
+
+        // load next image async
+        let next_image_path = &self.images[choose(self.images.len())];
+        load_image_async(next_image_path, self.next_image.clone());
+
+        // load rbga into image
+        let (width, height) = image_rgb.dimensions();
+        let image = Image::from_rgba8(ctx, width as u16, height as u16, &image_rgb)?;
+        self.current_image = image;
+
+        // reset positions
         self.point = cgmath::Point2::new(0.0, 0.0);
         self.scale = cgmath::Vector2::new(0.25, 0.25);
         self.rotation = 0.0;
-        self.swtich_delay = true;
+
+        // block any new input
+        self.ignore_keys_until = ggez::timer::ticks(ctx) + 60;
+
         Ok(())
     }
 }
 
-fn load_random_image(ctx: &mut Context, images: &Vec<PathBuf>) -> GameResult<Image> {
-    let index = images[choose(images.len())].as_ref();
-    load_image(ctx, index)
-}
-
-fn choose(len: usize) -> usize {
-    let mut rng = rand::thread_rng();
-    rng.gen_range(0, len)
-}
-
-fn load_image(ctx: &mut Context, path: &Path) -> GameResult<Image> {
-    let buffer = std::fs::read(path)?;
-    let img = image::load_from_memory(&buffer).unwrap().to_rgba8();
-    let (width, height) = img.dimensions();
-    Image::from_rgba8(ctx, width as u16, height as u16, &img)
-}
-
 impl EventHandler for App {
     fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
-        if !self.swtich_delay && ggez::input::keyboard::is_key_pressed(ctx, KeyCode::Space) {
+        let tick = ggez::timer::ticks(ctx);
+        if tick > self.ignore_keys_until
+            && ggez::input::keyboard::is_key_pressed(ctx, KeyCode::Space)
+        {
+            println!("loading next image");
             self.load_next_image(ctx)?;
-        } else {
-            self.swtich_delay = false;
         }
         Ok(())
     }
@@ -132,6 +143,22 @@ impl EventHandler for App {
                 .scale(self.scale),
         )?;
         graphics::present(ctx)
+    }
+}
+
+struct Trace {
+    start: Instant,
+}
+
+impl Trace {
+    fn new() -> Trace {
+        Trace {
+            start: std::time::Instant::now(),
+        }
+    }
+
+    fn done(&self) -> Duration {
+        std::time::Instant::now() - self.start
     }
 }
 
@@ -157,6 +184,40 @@ fn list_files_at(root_path: &Path) -> GameResult<Vec<PathBuf>> {
     }
 
     Ok(result)
+}
+
+fn load_random_image(ctx: &mut Context, images: &Vec<PathBuf>) -> GameResult<Image> {
+    let index = images[choose(images.len())].as_ref();
+    load_image(ctx, index)
+}
+
+fn choose(len: usize) -> usize {
+    let mut rng = rand::thread_rng();
+    rng.gen_range(0, len)
+}
+
+fn load_image_async(path: &Path, image_ref: ImageRef) {
+    let path = path.to_path_buf();
+
+    thread::spawn(move || {
+        let trace = Trace::new();
+        println!("loading {}", path.to_string_lossy());
+        let buffer = std::fs::read(&path).expect("fail to load image");
+        let img = image::load_from_memory(&buffer).unwrap().to_rgba8();
+        *image_ref.lock().unwrap() = Some(img);
+        println!(
+            "loaded {} in {}ms",
+            path.to_string_lossy(),
+            trace.done().as_millis()
+        );
+    });
+}
+
+fn load_image(ctx: &mut Context, path: &Path) -> GameResult<Image> {
+    let buffer = std::fs::read(path)?;
+    let img = image::load_from_memory(&buffer).unwrap().to_rgba8();
+    let (width, height) = img.dimensions();
+    Image::from_rgba8(ctx, width as u16, height as u16, &img)
 }
 
 #[cfg(test)]
