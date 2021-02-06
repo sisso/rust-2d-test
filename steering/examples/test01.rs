@@ -180,7 +180,7 @@ fn main() -> GameResult<()> {
             Ok(())
         }
         Err(e) => {
-            println!("Error occured: {}", e);
+            println!("Error occurred: {}", e);
             Err(e)
         }
     }

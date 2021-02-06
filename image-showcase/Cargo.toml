@@ -8,6 +8,8 @@ edition = "2018"
 opt-level = 1
 
 [dependencies]
-ggez = "0.5"
+ggez = "0.5.1"
 cgmath = { version = "0.17", features = ["mint"]}
-mint = "0.5"
+mint = "0.5.5"
+image = "0.23.13"
+rand = "*"

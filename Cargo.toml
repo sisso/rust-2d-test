@@ -3,12 +3,6 @@ opt-level = 1
 
 [workspace]
 members = [
-    "gravity",
-    "steering",
     "commons",
     "image-showcase",
-    "gridmap",
-    "gui",
-    "planets",
-    "test-imgui",
 ]
