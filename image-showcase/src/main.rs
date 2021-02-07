@@ -63,6 +63,7 @@ struct App {
     current_image: graphics::Image,
     next_image: ImageRef,
     point: cgmath::Point2<f32>,
+    point_move: cgmath::Point2<f32>,
     scale: cgmath::Vector2<f32>,
     rotation: f32,
     images: Vec<PathBuf>,
@@ -96,6 +97,7 @@ impl App {
             current_image: current_image,
             next_image: next_image_ref,
             point,
+            point_move: cgmath::Point2::new(0.0, 0.0),
             scale,
             rotation,
             images,
@@ -127,10 +129,15 @@ impl App {
 
         // reset positions
         self.point = cgmath::Point2::new(0.0, 0.0);
-        // self.scale = cgmath::Vector2::new(0.25, 0.25);
-        self.scale = cgmath::Vector2::new(1.0, 1.0)
-            * fit_image(self.screen_width, self.screen_height, width, height);
         self.rotation = 0.0;
+
+        // self.scale = cgmath::Vector2::new(0.25, 0.25);
+        let (ration, move_x, move_y) =
+            fill_image_2(self.screen_width, self.screen_height, width, height);
+        self.point_move.x = move_x;
+        self.point_move.y = move_y;
+        self.scale = cgmath::Vector2::new(1.0, 1.0) * ration;
+        // * fit_image(self.screen_width, self.screen_height, width, height);
 
         // block any new input
         self.ignore_keys_until = ggez::timer::ticks(ctx) + 60;
@@ -165,11 +172,11 @@ impl EventHandler for App {
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
         // graphics::clear(ctx, graphics::BLACK);
-        // self.point.x += 1.0;
-        // self.scale.x += 0.0001;
-        // self.scale.y += 0.0001;
+        self.point.x += self.point_move.x;
+        self.point.y += self.point_move.y;
+        self.scale.x += 0.0001;
+        self.scale.y += 0.0001;
         // self.rotation += 0.0001;
-        // graphics::draw(ctx, &self.image, (self.point.clone(),))?;
         graphics::draw(
             ctx,
             &self.current_image,
@@ -242,16 +249,54 @@ fn load_image(ctx: &mut Context, path: &Path) -> GameResult<Image> {
 }
 
 fn fit_image(screen_width: u32, screen_height: u32, image_width: u32, image_height: u32) -> f32 {
-    // let fill = true;
-    // let width = screen_width;
-    // let height = screen_height;
-    // let nwidth = image_width;
-    // let nheight = image_height;
-    // @see github.com-1ecc6299db9ec823/image-0.23.13/src/math/utils.rs:34
-
     let ration_w = screen_width as f32 / image_width as f32;
     let ration_h = screen_height as f32 / image_height as f32;
     ration_w.min(ration_h)
+}
+
+// return ration, move dir in x,y
+fn fill_image(
+    screen_width: u32,
+    screen_height: u32,
+    image_width: u32,
+    image_height: u32,
+) -> (f32, f32, f32) {
+    let ration_w = screen_width as f32 / image_width as f32;
+    let ration_h = screen_height as f32 / image_height as f32;
+
+    let result = if ration_w > ration_h {
+        (ration_w, 0.0, -1.0 / ration_h)
+    } else {
+        (ration_h, -1.0 / ration_w, 0.0)
+    };
+
+    println!(
+        "image {},{} ration {},{} -> {:?}",
+        image_width, image_height, ration_w, ration_h, result
+    );
+
+    result
+}
+
+// return ration, move dir in x,y
+fn fill_image_2(
+    screen_width: u32,
+    screen_height: u32,
+    image_width: u32,
+    image_height: u32,
+) -> (f32, f32, f32) {
+    let ration_w = screen_width as f32 / image_width as f32;
+    let ration_h = screen_height as f32 / image_height as f32;
+    let mut mx = 0.0;
+    let mut my = 0.0;
+
+    if image_width > image_height {
+        mx -= 1.0;
+    } else {
+        my -= 1.0;
+    }
+
+    (ration_w.min(ration_h), mx, my)
 }
 
 fn compute_next_switch() -> Instant {
@@ -264,17 +309,31 @@ mod test {
 
     #[test]
     fn find_images_recursive_test() {
-        let iterator = find_images(&std::path::PathBuf::from("/home/sisso/Pictures")).unwrap();
+        let iterator = find_images(&std::path::PathBuf::from(".")).unwrap();
         for file in iterator {
             println!("{:?}", file);
         }
-
-        assert!(false);
     }
 
     #[test]
     fn fit_image_test() {
         assert_relative_eq!(0.5, fit_image(200, 100, 300, 200));
         assert_relative_eq!(1.0 / 3.0, fit_image(200, 100, 200, 300));
+    }
+
+    #[test]
+    fn fill_image_hor_test() {
+        let (r, mx, my) = fill_image(200, 100, 300, 100);
+        assert_relative_eq!(1.0, r);
+        assert_relative_eq!(-1.5, mx);
+        assert_relative_eq!(0.0, my);
+    }
+
+    #[test]
+    fn fill_image_ver_test() {
+        let (r, mx, my) = fill_image(200, 100, 100, 200);
+        assert_relative_eq!(2.0, r);
+        assert_relative_eq!(0.0, mx);
+        assert_relative_eq!(-2.0, my);
     }
 }
