@@ -33,7 +33,7 @@ impl<ID: Copy> GuiButton<ID> {
         builder.rectangle(DrawMode::stroke(1.0), self.bounds, color);
 
         let mesh = builder.build(ctx)?;
-        graphics::draw(ctx, &mesh, DrawParam::default());
+        graphics::draw(ctx, &mesh, DrawParam::default())?;
 
         let text = graphics::Text::new(format!("{}", self.text));
         let border_x = (self.bounds.w - text.width(ctx) as f32) / 2.0;

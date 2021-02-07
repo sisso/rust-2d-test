@@ -13,3 +13,4 @@ cgmath = { version = "0.17", features = ["mint"]}
 mint = "0.5.5"
 image = "0.23.13"
 rand = "*"
+approx = "0.3.2"

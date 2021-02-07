@@ -1,12 +1,11 @@
+use approx::assert_relative_eq;
 use cgmath;
 use ggez::conf::WindowMode;
 use ggez::event::{self, EventHandler, KeyCode};
-use ggez::filesystem::print_all;
 use ggez::graphics::Image;
 use ggez::{graphics, Context, ContextBuilder, GameResult};
 use image::RgbaImage;
 use rand::Rng;
-use std::borrow::Borrow;
 use std::env;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -15,10 +14,13 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 fn main() -> GameResult<()> {
+    let screen_width = 1900;
+    let screen_height = 1024;
+
     let mut window_mode: WindowMode = Default::default();
     window_mode.resizable = true;
-    window_mode.width = 1900.0;
-    window_mode.height = 1024.0;
+    window_mode.width = screen_width as f32;
+    window_mode.height = screen_height as f32;
 
     let (mut ctx, mut event_loop) = ContextBuilder::new("Image showcase", "Someone")
         .window_mode(window_mode)
@@ -33,7 +35,12 @@ fn main() -> GameResult<()> {
         ),
     };
 
-    let mut app = App::new(&mut ctx, PathBuf::from(root_path).as_ref())?;
+    let mut app = App::new(
+        &mut ctx,
+        PathBuf::from(root_path).as_ref(),
+        screen_width,
+        screen_height,
+    )?;
 
     // Run!
     match event::run(&mut ctx, &mut event_loop, &mut app) {
@@ -57,11 +64,19 @@ struct App {
     scale: cgmath::Vector2<f32>,
     rotation: f32,
     images: Vec<PathBuf>,
+    change_image: bool,
     ignore_keys_until: usize,
+    screen_width: u32,
+    screen_height: u32,
 }
 
 impl App {
-    pub fn new(ctx: &mut Context, root: &Path) -> GameResult<App> {
+    pub fn new(
+        ctx: &mut Context,
+        root: &Path,
+        screen_width: u32,
+        screen_height: u32,
+    ) -> GameResult<App> {
         let images = find_images(root)?;
 
         let current_image = load_random_image(ctx, &images)?;
@@ -81,7 +96,10 @@ impl App {
             scale,
             rotation,
             images,
+            change_image: false,
             ignore_keys_until: 0,
+            screen_width,
+            screen_height,
         };
         Ok(game)
     }
@@ -94,7 +112,7 @@ impl App {
             _ => return Ok(()),
         };
 
-        // load next image async
+        // trigger to load next image async
         let next_image_path = &self.images[choose(self.images.len())];
         load_image_async(next_image_path, self.next_image.clone());
 
@@ -105,11 +123,14 @@ impl App {
 
         // reset positions
         self.point = cgmath::Point2::new(0.0, 0.0);
-        self.scale = cgmath::Vector2::new(0.25, 0.25);
+        // self.scale = cgmath::Vector2::new(0.25, 0.25);
+        self.scale = cgmath::Vector2::new(1.0, 1.0)
+            * fit_image(self.screen_width, self.screen_height, width, height);
         self.rotation = 0.0;
 
         // block any new input
         self.ignore_keys_until = ggez::timer::ticks(ctx) + 60;
+        self.change_image = false;
 
         Ok(())
     }
@@ -122,8 +143,13 @@ impl EventHandler for App {
             && ggez::input::keyboard::is_key_pressed(ctx, KeyCode::Space)
         {
             println!("loading next image");
+            self.change_image = true;
+        }
+
+        if self.change_image {
             self.load_next_image(ctx)?;
         }
+
         Ok(())
     }
 
@@ -200,6 +226,7 @@ fn load_image_async(path: &Path, image_ref: ImageRef) {
     let path = path.to_path_buf();
 
     thread::spawn(move || {
+        // TODO: test ImageReader::open("myimage.png")?.decode()
         let trace = Trace::new();
         println!("loading {}", path.to_string_lossy());
         let buffer = std::fs::read(&path).expect("fail to load image");
@@ -220,17 +247,36 @@ fn load_image(ctx: &mut Context, path: &Path) -> GameResult<Image> {
     Image::from_rgba8(ctx, width as u16, height as u16, &img)
 }
 
+fn fit_image(screen_width: u32, screen_height: u32, image_width: u32, image_height: u32) -> f32 {
+    // let fill = true;
+    // let width = screen_width;
+    // let height = screen_height;
+    // let nwidth = image_width;
+    // let nheight = image_height;
+    // @see github.com-1ecc6299db9ec823/image-0.23.13/src/math/utils.rs:34
+
+    let ration_w = screen_width as f32 / image_width as f32;
+    let ration_h = screen_height as f32 / image_height as f32;
+    ration_w.min(ration_h)
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
 
     #[test]
-    fn test_find_images_recursive() {
+    fn find_images_recursive_test() {
         let iterator = find_images(&std::path::PathBuf::from("/home/sisso/Pictures")).unwrap();
         for file in iterator {
             println!("{:?}", file);
         }
 
         assert!(false);
+    }
+
+    #[test]
+    fn fit_image_test() {
+        assert_relative_eq!(0.5, fit_image(200, 100, 300, 200));
+        assert_relative_eq!(1.0 / 3.0, fit_image(200, 100, 200, 300));
     }
 }
