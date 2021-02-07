@@ -13,6 +13,8 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+const SLEEP_SECONDS: u64 = 4;
+
 fn main() -> GameResult<()> {
     let screen_width = 1900;
     let screen_height = 1024;
@@ -68,6 +70,7 @@ struct App {
     ignore_keys_until: usize,
     screen_width: u32,
     screen_height: u32,
+    next_switch: Instant,
 }
 
 impl App {
@@ -100,6 +103,7 @@ impl App {
             ignore_keys_until: 0,
             screen_width,
             screen_height,
+            next_switch: compute_next_switch(),
         };
         Ok(game)
     }
@@ -146,6 +150,12 @@ impl EventHandler for App {
             self.change_image = true;
         }
 
+        if self.next_switch <= Instant::now() {
+            self.next_switch = compute_next_switch();
+            println!("time swtich");
+            self.change_image = true;
+        }
+
         if self.change_image {
             self.load_next_image(ctx)?;
         }
@@ -154,11 +164,11 @@ impl EventHandler for App {
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
-        graphics::clear(ctx, graphics::WHITE);
-        self.point.x += 1.0;
-        self.scale.x += 0.0001;
-        self.scale.y += 0.0001;
-        self.rotation += 0.0001;
+        // graphics::clear(ctx, graphics::BLACK);
+        // self.point.x += 1.0;
+        // self.scale.x += 0.0001;
+        // self.scale.y += 0.0001;
+        // self.rotation += 0.0001;
         // graphics::draw(ctx, &self.image, (self.point.clone(),))?;
         graphics::draw(
             ctx,
@@ -169,22 +179,6 @@ impl EventHandler for App {
                 .scale(self.scale),
         )?;
         graphics::present(ctx)
-    }
-}
-
-struct Trace {
-    start: Instant,
-}
-
-impl Trace {
-    fn new() -> Trace {
-        Trace {
-            start: std::time::Instant::now(),
-        }
-    }
-
-    fn done(&self) -> Duration {
-        std::time::Instant::now() - self.start
     }
 }
 
@@ -227,7 +221,7 @@ fn load_image_async(path: &Path, image_ref: ImageRef) {
 
     thread::spawn(move || {
         // TODO: test ImageReader::open("myimage.png")?.decode()
-        let trace = Trace::new();
+        let start_trace = Instant::now();
         println!("loading {}", path.to_string_lossy());
         let buffer = std::fs::read(&path).expect("fail to load image");
         let img = image::load_from_memory(&buffer).unwrap().to_rgba8();
@@ -235,7 +229,7 @@ fn load_image_async(path: &Path, image_ref: ImageRef) {
         println!(
             "loaded {} in {}ms",
             path.to_string_lossy(),
-            trace.done().as_millis()
+            start_trace.elapsed().as_millis()
         );
     });
 }
@@ -258,6 +252,10 @@ fn fit_image(screen_width: u32, screen_height: u32, image_width: u32, image_heig
     let ration_w = screen_width as f32 / image_width as f32;
     let ration_h = screen_height as f32 / image_height as f32;
     ration_w.min(ration_h)
+}
+
+fn compute_next_switch() -> Instant {
+    Instant::now() + Duration::new(SLEEP_SECONDS, 0)
 }
 
 #[cfg(test)]
