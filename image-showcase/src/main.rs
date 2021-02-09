@@ -1,3 +1,4 @@
+use crate::transitions::*;
 use approx::assert_relative_eq;
 use cgmath;
 use ggez::conf::WindowMode;
@@ -61,11 +62,8 @@ type ImageRef = Arc<Mutex<Option<RgbaImage>>>;
 
 struct App {
     current_image: graphics::Image,
+    transition: Box<dyn Transition>,
     next_image: ImageRef,
-    point: cgmath::Point2<f32>,
-    point_move: cgmath::Point2<f32>,
-    scale: cgmath::Vector2<f32>,
-    rotation: f32,
     images: Vec<PathBuf>,
     change_image: bool,
     ignore_keys_until: usize,
@@ -93,13 +91,17 @@ impl App {
         let scale = cgmath::Vector2::new(0.25, 0.25);
         let rotation = 0.0;
 
+        let transition = Box::new(FitTransition::new(
+            screen_width,
+            screen_height,
+            current_image.width() as u32,
+            current_image.height() as u32,
+        ));
+
         let game = App {
             current_image: current_image,
+            transition: transition,
             next_image: next_image_ref,
-            point,
-            point_move: cgmath::Point2::new(0.0, 0.0),
-            scale,
-            rotation,
             images,
             change_image: false,
             ignore_keys_until: 0,
@@ -128,16 +130,12 @@ impl App {
         self.current_image = image;
 
         // reset positions
-        self.point = cgmath::Point2::new(0.0, 0.0);
-        self.rotation = 0.0;
-
-        // self.scale = cgmath::Vector2::new(0.25, 0.25);
-        let (ration, move_x, move_y) =
-            fill_image_2(self.screen_width, self.screen_height, width, height);
-        self.point_move.x = move_x;
-        self.point_move.y = move_y;
-        self.scale = cgmath::Vector2::new(1.0, 1.0) * ration;
-        // * fit_image(self.screen_width, self.screen_height, width, height);
+        self.transition = Box::new(FitTransition::new(
+            self.screen_width,
+            self.screen_height,
+            self.current_image.width() as u32,
+            self.current_image.height() as u32,
+        ));
 
         // block any new input
         self.ignore_keys_until = ggez::timer::ticks(ctx) + 60;
@@ -171,19 +169,16 @@ impl EventHandler for App {
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
-        // graphics::clear(ctx, graphics::BLACK);
-        self.point.x += self.point_move.x;
-        self.point.y += self.point_move.y;
-        self.scale.x += 0.0001;
-        self.scale.y += 0.0001;
-        // self.rotation += 0.0001;
+        graphics::clear(ctx, graphics::BLACK);
+
+        let pos = self.transition.pos();
         graphics::draw(
             ctx,
             &self.current_image,
             graphics::DrawParam::new()
-                .dest(self.point.clone())
-                .rotation(self.rotation)
-                .scale(self.scale),
+                .dest(cgmath::Point2::new(pos.0, pos.1))
+                .rotation(self.transition.rotation())
+                .scale(cgmath::Vector2::new(1.0, 1.0) * self.transition.scale()),
         )?;
         graphics::present(ctx)
     }
@@ -254,49 +249,55 @@ fn fit_image(screen_width: u32, screen_height: u32, image_width: u32, image_heig
     ration_w.min(ration_h)
 }
 
-// return ration, move dir in x,y
-fn fill_image(
-    screen_width: u32,
-    screen_height: u32,
-    image_width: u32,
-    image_height: u32,
-) -> (f32, f32, f32) {
-    let ration_w = screen_width as f32 / image_width as f32;
-    let ration_h = screen_height as f32 / image_height as f32;
-
-    let result = if ration_w > ration_h {
-        (ration_w, 0.0, -1.0 / ration_h)
-    } else {
-        (ration_h, -1.0 / ration_w, 0.0)
-    };
-
-    println!(
-        "image {},{} ration {},{} -> {:?}",
-        image_width, image_height, ration_w, ration_h, result
-    );
-
-    result
-}
-
-// return ration, move dir in x,y
-fn fill_image_2(
-    screen_width: u32,
-    screen_height: u32,
-    image_width: u32,
-    image_height: u32,
-) -> (f32, f32, f32) {
-    let ration_w = screen_width as f32 / image_width as f32;
-    let ration_h = screen_height as f32 / image_height as f32;
-    let mut mx = 0.0;
-    let mut my = 0.0;
-
-    if image_width > image_height {
-        mx -= 1.0;
-    } else {
-        my -= 1.0;
+mod transitions {
+    pub trait Transition {
+        fn pos(&self) -> (f32, f32) {
+            (0.0, 0.0)
+        }
+        fn scale(&self) -> f32 {
+            1.0
+        }
+        fn rotation(&self) -> f32 {
+            0.0
+        }
+        fn update(&mut self, total_time: f32, delta_time: f32) {}
     }
 
-    (ration_w.min(ration_h), mx, my)
+    pub struct FitTransition {
+        x: f32,
+        y: f32,
+        scale: f32,
+    }
+
+    impl FitTransition {
+        pub fn new(
+            screen_width: u32,
+            screen_height: u32,
+            image_width: u32,
+            image_height: u32,
+        ) -> Self {
+            let ration_w = screen_width as f32 / image_width as f32;
+            let ration_h = screen_height as f32 / image_height as f32;
+            let scale = ration_w.min(ration_h);
+            let x = (screen_width as f32 - image_width as f32 * scale) / 2.0;
+            let y = (screen_height as f32 - image_height as f32 * scale) / 2.0;
+            FitTransition {
+                x: x,
+                y: y,
+                scale: scale,
+            }
+        }
+    }
+
+    impl Transition for FitTransition {
+        fn pos(&self) -> (f32, f32) {
+            (self.x, self.y)
+        }
+
+        fn scale(&self) -> f32 {
+            self.scale
+        }
+    }
 }
 
 fn compute_next_switch() -> Instant {
@@ -307,33 +308,25 @@ fn compute_next_switch() -> Instant {
 mod test {
     use super::*;
 
-    #[test]
-    fn find_images_recursive_test() {
-        let iterator = find_images(&std::path::PathBuf::from(".")).unwrap();
-        for file in iterator {
-            println!("{:?}", file);
-        }
-    }
-
-    #[test]
-    fn fit_image_test() {
-        assert_relative_eq!(0.5, fit_image(200, 100, 300, 200));
-        assert_relative_eq!(1.0 / 3.0, fit_image(200, 100, 200, 300));
-    }
-
-    #[test]
-    fn fill_image_hor_test() {
-        let (r, mx, my) = fill_image(200, 100, 300, 100);
-        assert_relative_eq!(1.0, r);
-        assert_relative_eq!(-1.5, mx);
-        assert_relative_eq!(0.0, my);
-    }
-
-    #[test]
-    fn fill_image_ver_test() {
-        let (r, mx, my) = fill_image(200, 100, 100, 200);
-        assert_relative_eq!(2.0, r);
-        assert_relative_eq!(0.0, mx);
-        assert_relative_eq!(-2.0, my);
-    }
+    // #[test]
+    // fn fit_image_test() {
+    //     assert_relative_eq!(0.5, fit_image(200, 100, 300, 200));
+    //     assert_relative_eq!(1.0 / 3.0, fit_image(200, 100, 200, 300));
+    // }
+    //
+    // #[test]
+    // fn fill_image_hor_test() {
+    //     let (r, mx, my) = fill_image(200, 100, 300, 100);
+    //     assert_relative_eq!(1.0, r);
+    //     assert_relative_eq!(-1.5, mx);
+    //     assert_relative_eq!(0.0, my);
+    // }
+    //
+    // #[test]
+    // fn fill_image_ver_test() {
+    //     let (r, mx, my) = fill_image(200, 100, 100, 200);
+    //     assert_relative_eq!(2.0, r);
+    //     assert_relative_eq!(0.0, mx);
+    //     assert_relative_eq!(-2.0, my);
+    // }
 }

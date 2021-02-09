@@ -282,7 +282,7 @@ fn test_nalgebra() {
     // giving a vector
     let v = Vector2::new(0.0, 1.0);
     // to a point
-    let p = Point2::from(v);
+    let _p = Point2::from(v);
     let p = Point2::origin() + v;
     // back to coords
     let v = p.coords;
