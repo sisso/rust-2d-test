@@ -91,12 +91,12 @@ impl App {
         let scale = cgmath::Vector2::new(0.25, 0.25);
         let rotation = 0.0;
 
-        let transition = Box::new(FitTransition::new(
+        let transition = next_transition(
             screen_width,
             screen_height,
             current_image.width() as u32,
             current_image.height() as u32,
-        ));
+        );
 
         let game = App {
             current_image: current_image,
@@ -130,12 +130,12 @@ impl App {
         self.current_image = image;
 
         // reset positions
-        self.transition = Box::new(FitTransition::new(
+        self.transition = next_transition(
             self.screen_width,
             self.screen_height,
             self.current_image.width() as u32,
             self.current_image.height() as u32,
-        ));
+        );
 
         // block any new input
         self.ignore_keys_until = ggez::timer::ticks(ctx) + 60;
@@ -147,6 +147,11 @@ impl App {
 
 impl EventHandler for App {
     fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
+        let delta_seconds = ggez::timer::delta(ctx).as_secs_f32();
+        let total_seconds = ggez::timer::time_since_start(ctx).as_secs_f32();
+
+        self.transition.update(total_seconds, delta_seconds);
+
         let tick = ggez::timer::ticks(ctx);
         if tick > self.ignore_keys_until
             && ggez::input::keyboard::is_key_pressed(ctx, KeyCode::Space)
@@ -249,7 +254,25 @@ fn fit_image(screen_width: u32, screen_height: u32, image_width: u32, image_heig
     ration_w.min(ration_h)
 }
 
+fn next_transition(
+    screen_width: u32,
+    screen_height: u32,
+    image_width: u32,
+    image_height: u32,
+) -> Box<dyn Transition> {
+    Box::new(ScaleOutTransition::new(
+        screen_width,
+        screen_height,
+        image_width,
+        image_height,
+    ))
+}
+
 mod transitions {
+    use crate::SLEEP_SECONDS;
+    use ggez::timer::delta;
+    use rand::{thread_rng, Rng};
+
     pub trait Transition {
         fn pos(&self) -> (f32, f32) {
             (0.0, 0.0)
@@ -296,6 +319,60 @@ mod transitions {
 
         fn scale(&self) -> f32 {
             self.scale
+        }
+    }
+
+    pub struct ScaleOutTransition {
+        x: f32,
+        y: f32,
+        scale: f32,
+        scale_step: f32,
+        move_x: f32,
+        move_y: f32,
+    }
+
+    impl ScaleOutTransition {
+        pub fn new(
+            screen_width: u32,
+            screen_height: u32,
+            image_width: u32,
+            image_height: u32,
+        ) -> Self {
+            let mut rng = thread_rng();
+
+            let ration_w = screen_width as f32 / image_width as f32;
+            let ration_h = screen_height as f32 / image_height as f32;
+            let scale = ration_w.min(ration_h);
+            let x = (screen_width as f32 - image_width as f32 * scale) / 2.0;
+            let y = (screen_height as f32 - image_height as f32 * scale) / 2.0;
+            let scale_step = 0.8 + rng.next_f32() * 0.4;
+
+            let move_x = rng.next_f32() * 40.0 - 20.0;
+            let move_y = rng.next_f32() * 10.0 - 5.0;
+
+            ScaleOutTransition {
+                x,
+                y,
+                scale,
+                scale_step,
+                move_x,
+                move_y,
+            }
+        }
+    }
+
+    impl Transition for ScaleOutTransition {
+        fn pos(&self) -> (f32, f32) {
+            (self.x + self.move_x, self.y + self.move_y)
+        }
+
+        fn scale(&self) -> f32 {
+            self.scale * self.scale_step
+        }
+
+        fn update(&mut self, total_time: f32, delta_time: f32) {
+            self.scale_step = commons::math::lerp(self.scale_step, 1.0, delta_time * 0.1);
+            self.move_x += delta_time * 10.0;
         }
     }
 }
