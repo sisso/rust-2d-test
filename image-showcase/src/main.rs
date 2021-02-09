@@ -329,6 +329,8 @@ mod transitions {
         scale_step: f32,
         move_x: f32,
         move_y: f32,
+        rotation: f32,
+        rotation_speed: f32,
     }
 
     impl ScaleOutTransition {
@@ -357,6 +359,8 @@ mod transitions {
                 scale_step,
                 move_x,
                 move_y,
+                rotation: rng.next_f32() * 0.10 - 0.05,
+                rotation_speed: rng.next_f32() * 0.02 - 0.01,
             }
         }
     }
@@ -370,9 +374,14 @@ mod transitions {
             self.scale * self.scale_step
         }
 
+        fn rotation(&self) -> f32 {
+            self.rotation
+        }
+
         fn update(&mut self, total_time: f32, delta_time: f32) {
             self.scale_step = commons::math::lerp(self.scale_step, 1.0, delta_time * 0.1);
             self.move_x += delta_time * 10.0;
+            self.rotation += delta_time * self.rotation_speed;
         }
     }
 }
