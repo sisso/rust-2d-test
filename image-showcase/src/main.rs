@@ -1,12 +1,11 @@
 use crate::transitions::*;
-use approx::assert_relative_eq;
 use cgmath;
 use ggez::conf::WindowMode;
 use ggez::event::{self, EventHandler, KeyCode};
 use ggez::graphics::Image;
 use ggez::{graphics, Context, ContextBuilder, GameResult};
 use image::RgbaImage;
-use rand::{prelude, Rng};
+use rand::{seq::SliceRandom, thread_rng, Rng};
 use rexiv2::Orientation;
 use std::env;
 use std::ops::{Deref, Range};
@@ -15,7 +14,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-pub const SLEEP_SECONDS: u64 = 10;
+pub const SLEEP_SECONDS: f32 = 10.0;
 pub const IMAGE_SCALE: Range<f32> = 0.8..1.2;
 pub const IMAGE_MOVE_SPEED: Range<f32> = -2.0..2.0;
 pub const IMAGE_ROTATION: Range<f32> = -0.01..0.01;
@@ -72,16 +71,16 @@ fn main() -> GameResult<()> {
 type ImageRef = Arc<Mutex<Option<RgbaImage>>>;
 
 struct App {
-    current_image: graphics::Image,
-    transition: Box<dyn Transition>,
+    image_index: usize,
+    current_image: Option<graphics::Image>,
+    transition: Option<Box<dyn Transition>>,
     next_image: ImageRef,
     images: Vec<PathBuf>,
     change_image: bool,
     ignore_keys_until: f32,
     screen_width: u32,
     screen_height: u32,
-    next_switch: Instant,
-    history: Vec<usize>,
+    next_switch: f32,
 }
 
 impl App {
@@ -89,33 +88,27 @@ impl App {
         ctx: &mut Context,
         screen_width: u32,
         screen_height: u32,
-        images: Vec<PathBuf>,
+        mut images: Vec<PathBuf>,
     ) -> GameResult<App> {
-        let current_image = load_random_image(ctx, &images)?;
+        let mut rng = thread_rng();
+        images.shuffle(&mut rng);
 
-        let next_image_index = choose(images.len());
-        let next_image_path = &images[next_image_index];
-        let next_image_ref = Arc::new(Mutex::new(None));
-        load_image_async(&next_image_path, next_image_ref.clone());
+        let next_image = Arc::new(Mutex::new(None));
 
-        let transition = next_transition(
-            screen_width,
-            screen_height,
-            current_image.width() as u32,
-            current_image.height() as u32,
-        );
+        let next_image_path = &images[0];
+        load_image_async(next_image_path, next_image.clone());
 
         let game = App {
-            current_image: current_image,
-            transition: transition,
-            next_image: next_image_ref,
+            image_index: 0,
+            current_image: None,
+            transition: None,
+            next_image,
             images,
-            change_image: false,
+            change_image: true,
             ignore_keys_until: 0.0,
             screen_width,
             screen_height,
-            next_switch: compute_next_switch(),
-            history: vec![next_image_index],
+            next_switch: 0.0,
         };
         Ok(game)
     }
@@ -129,29 +122,26 @@ impl App {
         };
 
         // trigger to load next image async
-        let next_image_index = choose(self.images.len());
-        let next_image_path = &self.images[next_image_index];
-
-        self.history.push(next_image_index);
-        while self.history.len() > 100 {
-            self.history.remove(0);
+        self.image_index += 1;
+        if self.image_index > self.images.len() {
+            self.image_index = 0;
         }
 
+        let next_image_path = &self.images[self.image_index];
         load_image_async(next_image_path, self.next_image.clone());
 
         // load rbga into image
         let (width, height) = image_rgb.dimensions();
         let image = Image::from_rgba8(ctx, width as u16, height as u16, &image_rgb)?;
-        self.current_image = image;
 
-        // reset positions
-        self.transition = next_transition(
+        // set properties
+        self.transition = Some(next_transition(
             self.screen_width,
             self.screen_height,
-            self.current_image.width() as u32,
-            self.current_image.height() as u32,
-        );
-
+            image.width() as u32,
+            image.height() as u32,
+        ));
+        self.current_image = Some(image);
         self.change_image = false;
 
         Ok(true)
@@ -163,9 +153,7 @@ impl EventHandler for App {
         let delta_seconds = ggez::timer::delta(ctx).as_secs_f32();
         let total_seconds = ggez::timer::time_since_start(ctx).as_secs_f32();
 
-        self.transition.update(total_seconds, delta_seconds);
-
-        let tick = ggez::timer::ticks(ctx);
+        // key inputs
         if total_seconds > self.ignore_keys_until {
             if ggez::input::keyboard::is_key_pressed(ctx, KeyCode::Space)
                 || ggez::input::keyboard::is_key_pressed(ctx, KeyCode::Right)
@@ -181,14 +169,20 @@ impl EventHandler for App {
             }
         }
 
-        if self.next_switch <= Instant::now() {
+        // timers
+        if self.next_switch <= total_seconds {
             println!("time switch");
             self.change_image = true;
         }
 
+        // update
+        self.transition
+            .iter_mut()
+            .for_each(|i| i.update(total_seconds, delta_seconds));
+
         if self.change_image {
             if self.load_next_image(ctx)? {
-                self.next_switch = compute_next_switch();
+                self.next_switch = total_seconds + SLEEP_SECONDS
             }
         }
 
@@ -198,15 +192,20 @@ impl EventHandler for App {
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
         graphics::clear(ctx, graphics::BLACK);
 
-        let pos = self.transition.pos();
-        graphics::draw(
-            ctx,
-            &self.current_image,
-            graphics::DrawParam::new()
-                .dest(cgmath::Point2::new(pos.0, pos.1))
-                .rotation(self.transition.rotation())
-                .scale(cgmath::Vector2::new(1.0, 1.0) * self.transition.scale()),
-        )?;
+        match (&self.current_image, &self.transition) {
+            (Some(img), Some(trans)) => {
+                let pos = trans.pos();
+                graphics::draw(
+                    ctx,
+                    img,
+                    graphics::DrawParam::new()
+                        .dest(cgmath::Point2::new(pos.0, pos.1))
+                        .rotation(trans.rotation())
+                        .scale(cgmath::Vector2::new(1.0, 1.0) * trans.scale()),
+                )?;
+            }
+            _ => {}
+        }
         graphics::present(ctx)
     }
 }
@@ -233,16 +232,6 @@ fn list_files_at(root_path: &Path) -> GameResult<Vec<PathBuf>> {
     }
 
     Ok(result)
-}
-
-fn load_random_image(ctx: &mut Context, images: &Vec<PathBuf>) -> GameResult<Image> {
-    let index = images[choose(images.len())].as_ref();
-    load_image(ctx, index)
-}
-
-fn choose(len: usize) -> usize {
-    let mut rng = rand::thread_rng();
-    rng.gen_range(0..len)
 }
 
 fn load_image_async(path: &Path, image_ref: ImageRef) {
@@ -402,16 +391,12 @@ mod transitions {
             self.rotation
         }
 
-        fn update(&mut self, total_time: f32, delta_time: f32) {
+        fn update(&mut self, _total_time: f32, delta_time: f32) {
             self.scale_step = commons::math::lerp(self.scale_step, 1.0, delta_time * 0.1);
             self.x += self.move_x * delta_time;
             self.rotation += delta_time * self.rotation_speed;
         }
     }
-}
-
-fn compute_next_switch() -> Instant {
-    Instant::now() + Duration::new(SLEEP_SECONDS, 0)
 }
 
 #[cfg(test)]
