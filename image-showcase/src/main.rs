@@ -123,7 +123,7 @@ impl App {
 
         // trigger to load next image async
         self.image_index += 1;
-        if self.image_index > self.images.len() {
+        if self.image_index >= self.images.len() {
             self.image_index = 0;
         }
 
@@ -164,7 +164,7 @@ impl EventHandler for App {
             }
 
             if ggez::input::keyboard::is_key_pressed(ctx, KeyCode::Left) {
-                println!("loading next image");
+                println!("loading previous image");
                 self.ignore_keys_until = total_seconds + 1.0;
             }
         }
