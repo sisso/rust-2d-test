@@ -6,19 +6,24 @@ use ggez::event::{self, EventHandler, KeyCode};
 use ggez::graphics::Image;
 use ggez::{graphics, Context, ContextBuilder, GameResult};
 use image::RgbaImage;
-use rand::Rng;
+use rand::{prelude, Rng};
+use rexiv2::Orientation;
 use std::env;
-use std::ops::Deref;
+use std::ops::{Deref, Range};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-const SLEEP_SECONDS: u64 = 4;
+pub const SLEEP_SECONDS: u64 = 10;
+pub const IMAGE_SCALE: Range<f32> = 0.8..1.2;
+pub const IMAGE_MOVE_SPEED: Range<f32> = -2.0..2.0;
+pub const IMAGE_ROTATION: Range<f32> = -0.01..0.01;
+pub const IMAGE_ROTATION_SPEED: Range<f32> = -0.005..0.005;
 
 fn main() -> GameResult<()> {
-    let screen_width = 1900;
-    let screen_height = 1024;
+    let screen_width = 1920;
+    let screen_height = 1080;
 
     let mut window_mode: WindowMode = Default::default();
     window_mode.resizable = true;
@@ -30,20 +35,26 @@ fn main() -> GameResult<()> {
         .build()
         .expect("aieee, could not create ggez context!");
 
-    let root_path = match env::args().nth(1) {
-        Some(path) => path,
-        None => format!(
+    let mut images = vec![];
+    let args: Vec<_> = env::args().skip(1).collect();
+
+    if args.is_empty() {
+        let path = format!(
             "{}/Pictures",
             env::var("HOME").expect("user home not found")
-        ),
-    };
+        );
+        println!("reading path {}", path);
+        let path = PathBuf::from(path);
+        images.extend(find_images(path.as_ref())?);
+    } else {
+        for path in args {
+            println!("reading path {}", path);
+            let path = PathBuf::from(path);
+            images.extend(find_images(path.as_ref())?);
+        }
+    }
 
-    let mut app = App::new(
-        &mut ctx,
-        PathBuf::from(root_path).as_ref(),
-        screen_width,
-        screen_height,
-    )?;
+    let mut app = App::new(&mut ctx, screen_width, screen_height, images)?;
 
     // Run!
     match event::run(&mut ctx, &mut event_loop, &mut app) {
@@ -66,30 +77,26 @@ struct App {
     next_image: ImageRef,
     images: Vec<PathBuf>,
     change_image: bool,
-    ignore_keys_until: usize,
+    ignore_keys_until: f32,
     screen_width: u32,
     screen_height: u32,
     next_switch: Instant,
+    history: Vec<usize>,
 }
 
 impl App {
     pub fn new(
         ctx: &mut Context,
-        root: &Path,
         screen_width: u32,
         screen_height: u32,
+        images: Vec<PathBuf>,
     ) -> GameResult<App> {
-        let images = find_images(root)?;
-
         let current_image = load_random_image(ctx, &images)?;
 
-        let next_image_path = &images[choose(images.len())];
+        let next_image_index = choose(images.len());
+        let next_image_path = &images[next_image_index];
         let next_image_ref = Arc::new(Mutex::new(None));
-        load_image_async(next_image_path, next_image_ref.clone());
-
-        let point = cgmath::Point2::new(0.0, 0.0);
-        let scale = cgmath::Vector2::new(0.25, 0.25);
-        let rotation = 0.0;
+        load_image_async(&next_image_path, next_image_ref.clone());
 
         let transition = next_transition(
             screen_width,
@@ -104,24 +111,32 @@ impl App {
             next_image: next_image_ref,
             images,
             change_image: false,
-            ignore_keys_until: 0,
+            ignore_keys_until: 0.0,
             screen_width,
             screen_height,
             next_switch: compute_next_switch(),
+            history: vec![next_image_index],
         };
         Ok(game)
     }
 
-    fn load_next_image(&mut self, ctx: &mut Context) -> GameResult<()> {
+    fn load_next_image(&mut self, ctx: &mut Context) -> GameResult<bool> {
         // get next image if is already loaded
         let mut image_ref = self.next_image.deref().lock().unwrap();
         let image_rgb = match image_ref.take() {
             Some(image) => image,
-            _ => return Ok(()),
+            _ => return Ok(false),
         };
 
         // trigger to load next image async
-        let next_image_path = &self.images[choose(self.images.len())];
+        let next_image_index = choose(self.images.len());
+        let next_image_path = &self.images[next_image_index];
+
+        self.history.push(next_image_index);
+        while self.history.len() > 100 {
+            self.history.remove(0);
+        }
+
         load_image_async(next_image_path, self.next_image.clone());
 
         // load rbga into image
@@ -137,11 +152,9 @@ impl App {
             self.current_image.height() as u32,
         );
 
-        // block any new input
-        self.ignore_keys_until = ggez::timer::ticks(ctx) + 60;
         self.change_image = false;
 
-        Ok(())
+        Ok(true)
     }
 }
 
@@ -153,21 +166,30 @@ impl EventHandler for App {
         self.transition.update(total_seconds, delta_seconds);
 
         let tick = ggez::timer::ticks(ctx);
-        if tick > self.ignore_keys_until
-            && ggez::input::keyboard::is_key_pressed(ctx, KeyCode::Space)
-        {
-            println!("loading next image");
-            self.change_image = true;
+        if total_seconds > self.ignore_keys_until {
+            if ggez::input::keyboard::is_key_pressed(ctx, KeyCode::Space)
+                || ggez::input::keyboard::is_key_pressed(ctx, KeyCode::Right)
+            {
+                println!("loading next image");
+                self.change_image = true;
+                self.ignore_keys_until = total_seconds + 1.0;
+            }
+
+            if ggez::input::keyboard::is_key_pressed(ctx, KeyCode::Left) {
+                println!("loading next image");
+                self.ignore_keys_until = total_seconds + 1.0;
+            }
         }
 
         if self.next_switch <= Instant::now() {
-            self.next_switch = compute_next_switch();
-            println!("time swtich");
+            println!("time switch");
             self.change_image = true;
         }
 
         if self.change_image {
-            self.load_next_image(ctx)?;
+            if self.load_next_image(ctx)? {
+                self.next_switch = compute_next_switch();
+            }
         }
 
         Ok(())
@@ -220,18 +242,25 @@ fn load_random_image(ctx: &mut Context, images: &Vec<PathBuf>) -> GameResult<Ima
 
 fn choose(len: usize) -> usize {
     let mut rng = rand::thread_rng();
-    rng.gen_range(0, len)
+    rng.gen_range(0..len)
 }
 
 fn load_image_async(path: &Path, image_ref: ImageRef) {
     let path = path.to_path_buf();
 
     thread::spawn(move || {
-        // TODO: test ImageReader::open("myimage.png")?.decode()
         let start_trace = Instant::now();
         println!("loading {}", path.to_string_lossy());
         let buffer = std::fs::read(&path).expect("fail to load image");
-        let img = image::load_from_memory(&buffer).unwrap().to_rgba8();
+        let meta = rexiv2::Metadata::new_from_buffer(&buffer).unwrap();
+        let mut dynamic_img = image::load_from_memory(&buffer).unwrap();
+        match meta.get_orientation() {
+            Orientation::Rotate180 => dynamic_img = dynamic_img.rotate180(),
+            Orientation::Rotate90 => dynamic_img = dynamic_img.rotate90(),
+            Orientation::Rotate270 => dynamic_img = dynamic_img.rotate270(),
+            _ => (),
+        }
+        let img = dynamic_img.to_rgba8();
         *image_ref.lock().unwrap() = Some(img);
         println!(
             "loaded {} in {}ms",
@@ -242,8 +271,7 @@ fn load_image_async(path: &Path, image_ref: ImageRef) {
 }
 
 fn load_image(ctx: &mut Context, path: &Path) -> GameResult<Image> {
-    let buffer = std::fs::read(path)?;
-    let img = image::load_from_memory(&buffer).unwrap().to_rgba8();
+    let img = image::open(path).unwrap().to_rgba8();
     let (width, height) = img.dimensions();
     Image::from_rgba8(ctx, width as u16, height as u16, &img)
 }
@@ -269,9 +297,9 @@ fn next_transition(
 }
 
 mod transitions {
-    use crate::SLEEP_SECONDS;
+    use super::*;
     use ggez::timer::delta;
-    use rand::{thread_rng, Rng};
+    use rand::{thread_rng, Rng, RngCore};
 
     pub trait Transition {
         fn pos(&self) -> (f32, f32) {
@@ -347,20 +375,16 @@ mod transitions {
             let scale = ration_w.min(ration_h);
             let x = (screen_width as f32 - image_width as f32 * scale) / 2.0;
             let y = (screen_height as f32 - image_height as f32 * scale) / 2.0;
-            let scale_step = 0.8 + rng.next_f32() * 0.4;
-
-            let move_x = rng.next_f32() * 40.0 - 20.0;
-            let move_y = rng.next_f32() * 10.0 - 5.0;
 
             ScaleOutTransition {
                 x,
                 y,
                 scale,
-                scale_step,
-                move_x,
-                move_y,
-                rotation: rng.next_f32() * 0.10 - 0.05,
-                rotation_speed: rng.next_f32() * 0.02 - 0.01,
+                scale_step: rng.gen_range(IMAGE_SCALE),
+                move_x: rng.gen_range(IMAGE_MOVE_SPEED),
+                move_y: 0.0,
+                rotation: rng.gen_range(IMAGE_ROTATION),
+                rotation_speed: rng.gen_range(IMAGE_ROTATION_SPEED),
             }
         }
     }
@@ -380,7 +404,7 @@ mod transitions {
 
         fn update(&mut self, total_time: f32, delta_time: f32) {
             self.scale_step = commons::math::lerp(self.scale_step, 1.0, delta_time * 0.1);
-            self.move_x += delta_time * 10.0;
+            self.x += self.move_x * delta_time;
             self.rotation += delta_time * self.rotation_speed;
         }
     }
@@ -398,21 +422,5 @@ mod test {
     // fn fit_image_test() {
     //     assert_relative_eq!(0.5, fit_image(200, 100, 300, 200));
     //     assert_relative_eq!(1.0 / 3.0, fit_image(200, 100, 200, 300));
-    // }
-    //
-    // #[test]
-    // fn fill_image_hor_test() {
-    //     let (r, mx, my) = fill_image(200, 100, 300, 100);
-    //     assert_relative_eq!(1.0, r);
-    //     assert_relative_eq!(-1.5, mx);
-    //     assert_relative_eq!(0.0, my);
-    // }
-    //
-    // #[test]
-    // fn fill_image_ver_test() {
-    //     let (r, mx, my) = fill_image(200, 100, 100, 200);
-    //     assert_relative_eq!(2.0, r);
-    //     assert_relative_eq!(0.0, mx);
-    //     assert_relative_eq!(-2.0, my);
     // }
 }

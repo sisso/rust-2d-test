@@ -12,6 +12,7 @@ ggez = "0.5.1"
 cgmath = { version = "0.17", features = ["mint"]}
 mint = "0.5.5"
 image = "0.23.13"
-rand = "*"
+rand = "0.8.3"
 approx = "0.3.2"
 commons = { version = "*", path = "../commons" }
+rexiv2 = "0.9.*"
