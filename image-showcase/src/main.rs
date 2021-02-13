@@ -19,6 +19,7 @@ use std::time::{Duration, Instant};
 
 const NANOS_PER_MILLI: u32 = 1_000_000;
 pub const SLEEP_SECONDS: f32 = 10.0;
+pub const KEY_WAIT: f32 = 0.250;
 pub const IMAGE_SCALE: Range<f32> = 0.9..1.3;
 pub const IMAGE_MOVE_SPEED: Range<f32> = -2.0..2.0;
 pub const IMAGE_ROTATION: Range<f32> = -0.01..0.01;
@@ -72,8 +73,6 @@ fn main() -> GameResult<()> {
     }
 }
 
-type ImageRef = Option<RgbaImage>;
-
 struct ImageLoader {
     close: Arc<AtomicBool>,
     request_tx: Sender<PathBuf>,
@@ -104,7 +103,6 @@ impl ImageLoader {
     }
 
     pub fn load(&self, path: &Path) {
-        println!("requesting to load {}", path.to_string_lossy());
         self.request_tx.send(path.to_path_buf()).unwrap();
     }
 
@@ -131,7 +129,6 @@ impl ImageLoader {
                 };
 
                 let start_trace = Instant::now();
-                println!("loading {}", path.to_string_lossy());
                 let buffer = std::fs::read(&path).expect("fail to load image");
                 let meta = rexiv2::Metadata::new_from_buffer(&buffer).unwrap();
                 let mut dynamic_img = image::load_from_memory(&buffer).unwrap();
@@ -154,73 +151,22 @@ impl ImageLoader {
     }
 }
 
+struct ImageRef {
+    index: usize,
+    path: PathBuf,
+    state: ImageState,
+}
+
 enum ImageState {
-    Idle {
-        index: usize,
-        path: PathBuf,
-    },
-    Loading {
-        index: usize,
-        path: PathBuf,
-    },
+    Idle,
+    Loading,
     Loaded {
-        index: usize,
-        path: PathBuf,
         image: graphics::Image,
         transition: Box<dyn Transition>,
     },
 }
 
 impl ImageState {
-    fn get_path(&self) -> &Path {
-        match self {
-            ImageState::Idle { path, .. } => path,
-            ImageState::Loading { path, .. } => path,
-            ImageState::Loaded { path, .. } => path,
-        }
-    }
-
-    fn get_index(&self) -> usize {
-        match self {
-            ImageState::Idle { index, .. } => *index,
-            ImageState::Loading { index, .. } => *index,
-            ImageState::Loaded { index, .. } => *index,
-        }
-    }
-
-    fn into_idle(mut self) -> Self {
-        match self {
-            ImageState::Loading { index, path } => ImageState::Idle { index, path },
-            ImageState::Loaded { index, path, .. } => ImageState::Idle { index, path },
-            other => other,
-        }
-    }
-
-    fn into_loading(mut self) -> Self {
-        match self {
-            ImageState::Idle { index, path } => ImageState::Loading { index, path },
-            other => other,
-        }
-    }
-
-    fn into_loaded(mut self, image: graphics::Image, transition: Box<dyn Transition>) -> Self {
-        match self {
-            ImageState::Idle { index, path } => ImageState::Loaded {
-                index,
-                path,
-                image,
-                transition,
-            },
-            ImageState::Loading { index, path } => ImageState::Loaded {
-                index,
-                path,
-                image,
-                transition,
-            },
-            other => other,
-        }
-    }
-
     fn is_loading(&self) -> bool {
         match self {
             ImageState::Idle { .. } => false,
@@ -249,13 +195,12 @@ impl ImageState {
 struct App {
     current_index: usize,
     desired_index: CycleIndex,
-    images: Vec<ImageState>,
+    images: Vec<ImageRef>,
     ignore_keys_until: f32,
     screen_width: u32,
     screen_height: u32,
     next_switch: f32,
     image_loader: ImageLoader,
-    change_image: bool,
 }
 
 impl App {
@@ -271,7 +216,11 @@ impl App {
         let images: Vec<_> = images_path
             .into_iter()
             .enumerate()
-            .map(|(index, path)| ImageState::Idle { index, path })
+            .map(|(index, path)| ImageRef {
+                index,
+                path,
+                state: ImageState::Idle,
+            })
             .collect();
 
         let loader = ImageLoader::new();
@@ -288,7 +237,6 @@ impl App {
             screen_height,
             next_switch: 0.0,
             image_loader: loader,
-            change_image: true,
         };
         Ok(game)
     }
@@ -301,7 +249,7 @@ impl App {
                     let index = self
                         .images
                         .iter()
-                        .position(|i| i.get_path() == path.as_path())
+                        .position(|i| i.path.as_path() == path.as_path())
                         .expect("loaded image not found");
 
                     // load rbga into image
@@ -317,73 +265,29 @@ impl App {
                     );
 
                     // update state
-                    self.images[index] = self.images[index].into_loaded(image, transition);
+                    self.images[index].state = ImageState::Loaded { image, transition };
+
+                    println!("loaded image {}", index);
                 }
                 None => break,
             };
         }
 
-        if self.images[self.desired_index.index].is_idle() {
-            self.images[self.desired_index.index] =
-                self.images[self.desired_index.index].into_loading();
-            self.image_loader
-                .load(self.images[self.desired_index.index].get_path());
-            return Ok(false);
+        match &self.images[self.desired_index.index].state {
+            ImageState::Idle => {
+                self.images[self.desired_index.index].state = ImageState::Loading;
+                self.image_loader
+                    .load(self.images[self.desired_index.index].path.as_path());
+                println!("requesting image {}", self.desired_index.index);
+                Ok(false)
+            }
+            ImageState::Loading => Ok(false),
+            ImageState::Loaded { .. } if self.current_index != self.desired_index.index => {
+                self.current_index = self.desired_index.index;
+                Ok(true)
+            }
+            _ => Ok(false),
         }
-
-        if self.images[self.desired_index.index].is_loading() {
-            return Ok(false);
-        }
-
-        // search if requested image is loaded
-        // let image_rgb = if self.images[self.desired_index].is_idle()
-        //     .images
-        //     .iter()
-        //     .find(|(path, img)| path.as_path() == self.images[self.image_index].as_path())
-        // {
-        //     Some((_, img)) => img,
-        //     None => {
-        //         // request image to load if was not requrested yeat
-        //         if self
-        //             .requested
-        //             .iter()
-        //             .find(|i| **i == self.image_index)
-        //             .is_none()
-        //         {
-        //             self.image_loader
-        //                 .load(self.images[self.image_index].as_path());
-        //             self.requested.push(self.image_index);
-        //         }
-        //
-        //         return Ok(false);
-        //     }
-        // };
-        //
-        // // trigger to load next image async
-        // let next_index = if self.image_index >= self.images.len() {
-        //     0
-        // } else {
-        //     self.image_index + 1
-        // };
-        //
-        // self.image_loader.load(&self.images[next_index]);
-        // self.requested.push(next_index);
-        //
-        // // load rbga into image
-        // let (width, height) = image_rgb.dimensions();
-        // let image = Image::from_rgba8(ctx, width as u16, height as u16, &image_rgb)?;
-        //
-        // // set properties
-        // self.transition = Some(next_transition(
-        //     self.screen_width,
-        //     self.screen_height,
-        //     image.width() as u32,
-        //     image.height() as u32,
-        // ));
-        // self.current_image = Some(image);
-        // self.change_image = false;
-
-        Ok(true)
     }
 }
 
@@ -395,10 +299,9 @@ struct CycleIndex {
 
 impl CycleIndex {
     fn next(&mut self) {
+        self.index += 1;
         if self.index >= self.max {
             self.index = 0;
-        } else {
-            self.index += 1;
         }
     }
 
@@ -421,15 +324,13 @@ impl EventHandler for App {
             if ggez::input::keyboard::is_key_pressed(ctx, KeyCode::Space)
                 || ggez::input::keyboard::is_key_pressed(ctx, KeyCode::Right)
             {
-                self.ignore_keys_until = total_seconds + 1.0;
-                self.change_image = true;
+                self.ignore_keys_until = total_seconds + KEY_WAIT;
                 self.desired_index.next();
                 println!("desired image {}", self.desired_index.index);
             }
 
             if ggez::input::keyboard::is_key_pressed(ctx, KeyCode::Left) {
-                self.ignore_keys_until = total_seconds + 1.0;
-                self.change_image = true;
+                self.ignore_keys_until = total_seconds + KEY_WAIT;
                 self.desired_index.previous();
                 println!("desired image {}", self.desired_index.index);
             }
@@ -438,23 +339,20 @@ impl EventHandler for App {
         // timers
         if self.next_switch <= total_seconds {
             self.next_switch = total_seconds + SLEEP_SECONDS;
-            self.change_image = true;
             self.desired_index.next();
             println!("time switch {}", self.desired_index.index);
         }
 
         // update
-        match &mut self.images[self.current_index] {
+        match &mut self.images[self.current_index].state {
             ImageState::Loaded { transition, .. } => {
                 transition.update(total_seconds, delta_seconds);
             }
             _ => {}
         };
 
-        if self.change_image {
-            if self.try_load_next_image(ctx)? {
-                self.next_switch = total_seconds + SLEEP_SECONDS;
-            }
+        if self.try_load_next_image(ctx)? {
+            self.next_switch = total_seconds + SLEEP_SECONDS;
         }
 
         Ok(())
@@ -463,7 +361,7 @@ impl EventHandler for App {
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
         graphics::clear(ctx, graphics::BLACK);
 
-        match &self.images[self.current_index] {
+        match &self.images[self.current_index].state {
             ImageState::Loaded {
                 transition, image, ..
             } => {
