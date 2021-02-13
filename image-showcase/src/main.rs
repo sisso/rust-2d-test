@@ -104,6 +104,7 @@ impl ImageLoader {
     }
 
     pub fn load(&self, path: &Path) {
+        println!("requesting to load {}", path.to_string_lossy());
         self.request_tx.send(path.to_path_buf()).unwrap();
     }
 
@@ -153,18 +154,108 @@ impl ImageLoader {
     }
 }
 
+enum ImageState {
+    Idle {
+        index: usize,
+        path: PathBuf,
+    },
+    Loading {
+        index: usize,
+        path: PathBuf,
+    },
+    Loaded {
+        index: usize,
+        path: PathBuf,
+        image: graphics::Image,
+        transition: Box<dyn Transition>,
+    },
+}
+
+impl ImageState {
+    fn get_path(&self) -> &Path {
+        match self {
+            ImageState::Idle { path, .. } => path,
+            ImageState::Loading { path, .. } => path,
+            ImageState::Loaded { path, .. } => path,
+        }
+    }
+
+    fn get_index(&self) -> usize {
+        match self {
+            ImageState::Idle { index, .. } => *index,
+            ImageState::Loading { index, .. } => *index,
+            ImageState::Loaded { index, .. } => *index,
+        }
+    }
+
+    fn into_idle(mut self) -> Self {
+        match self {
+            ImageState::Loading { index, path } => ImageState::Idle { index, path },
+            ImageState::Loaded { index, path, .. } => ImageState::Idle { index, path },
+            other => other,
+        }
+    }
+
+    fn into_loading(mut self) -> Self {
+        match self {
+            ImageState::Idle { index, path } => ImageState::Loading { index, path },
+            other => other,
+        }
+    }
+
+    fn into_loaded(mut self, image: graphics::Image, transition: Box<dyn Transition>) -> Self {
+        match self {
+            ImageState::Idle { index, path } => ImageState::Loaded {
+                index,
+                path,
+                image,
+                transition,
+            },
+            ImageState::Loading { index, path } => ImageState::Loaded {
+                index,
+                path,
+                image,
+                transition,
+            },
+            other => other,
+        }
+    }
+
+    fn is_loading(&self) -> bool {
+        match self {
+            ImageState::Idle { .. } => false,
+            ImageState::Loading { .. } => true,
+            ImageState::Loaded { .. } => false,
+        }
+    }
+
+    fn is_loaded(&self) -> bool {
+        match self {
+            ImageState::Idle { .. } => false,
+            ImageState::Loading { .. } => false,
+            ImageState::Loaded { .. } => true,
+        }
+    }
+
+    fn is_idle(&self) -> bool {
+        match self {
+            ImageState::Idle { .. } => true,
+            ImageState::Loading { .. } => false,
+            ImageState::Loaded { .. } => false,
+        }
+    }
+}
+
 struct App {
-    image_index: usize,
-    current_image: Option<graphics::Image>,
-    transition: Option<Box<dyn Transition>>,
-    next_image: ImageRef,
-    images: Vec<PathBuf>,
-    change_image: bool,
+    current_index: usize,
+    desired_index: CycleIndex,
+    images: Vec<ImageState>,
     ignore_keys_until: f32,
     screen_width: u32,
     screen_height: u32,
     next_switch: f32,
     image_loader: ImageLoader,
+    change_image: bool,
 }
 
 impl App {
@@ -172,60 +263,151 @@ impl App {
         ctx: &mut Context,
         screen_width: u32,
         screen_height: u32,
-        mut images: Vec<PathBuf>,
+        mut images_path: Vec<PathBuf>,
     ) -> GameResult<App> {
         let mut rng = thread_rng();
-        images.shuffle(&mut rng);
+        images_path.shuffle(&mut rng);
+
+        let images: Vec<_> = images_path
+            .into_iter()
+            .enumerate()
+            .map(|(index, path)| ImageState::Idle { index, path })
+            .collect();
 
         let loader = ImageLoader::new();
-        loader.load(&images[0]);
 
         let game = App {
-            image_index: 0,
-            current_image: None,
-            transition: None,
-            next_image: None,
+            current_index: 0,
+            desired_index: CycleIndex {
+                index: 0,
+                max: images.len(),
+            },
             images,
-            change_image: true,
             ignore_keys_until: 0.0,
             screen_width,
             screen_height,
             next_switch: 0.0,
             image_loader: loader,
+            change_image: true,
         };
         Ok(game)
     }
 
     fn try_load_next_image(&mut self, ctx: &mut Context) -> GameResult<bool> {
-        // get next image if is already loaded
-        let (_, image_rgb) = match self.image_loader.take() {
-            Some((path, img)) => (path, img),
-            None => return Ok(false),
-        };
+        // load any read image
+        loop {
+            match self.image_loader.take() {
+                Some((path, image_rgb)) => {
+                    let index = self
+                        .images
+                        .iter()
+                        .position(|i| i.get_path() == path.as_path())
+                        .expect("loaded image not found");
 
-        // trigger to load next image async
-        self.image_index += 1;
-        if self.image_index >= self.images.len() {
-            self.image_index = 0;
+                    // load rbga into image
+                    let (width, height) = image_rgb.dimensions();
+                    let image = Image::from_rgba8(ctx, width as u16, height as u16, &image_rgb)?;
+
+                    // set properties
+                    let transition = next_transition(
+                        self.screen_width,
+                        self.screen_height,
+                        image.width() as u32,
+                        image.height() as u32,
+                    );
+
+                    // update state
+                    self.images[index] = self.images[index].into_loaded(image, transition);
+                }
+                None => break,
+            };
         }
 
-        self.image_loader.load(&self.images[self.image_index]);
+        if self.images[self.desired_index.index].is_idle() {
+            self.images[self.desired_index.index] =
+                self.images[self.desired_index.index].into_loading();
+            self.image_loader
+                .load(self.images[self.desired_index.index].get_path());
+            return Ok(false);
+        }
 
-        // load rbga into image
-        let (width, height) = image_rgb.dimensions();
-        let image = Image::from_rgba8(ctx, width as u16, height as u16, &image_rgb)?;
+        if self.images[self.desired_index.index].is_loading() {
+            return Ok(false);
+        }
 
-        // set properties
-        self.transition = Some(next_transition(
-            self.screen_width,
-            self.screen_height,
-            image.width() as u32,
-            image.height() as u32,
-        ));
-        self.current_image = Some(image);
-        self.change_image = false;
+        // search if requested image is loaded
+        // let image_rgb = if self.images[self.desired_index].is_idle()
+        //     .images
+        //     .iter()
+        //     .find(|(path, img)| path.as_path() == self.images[self.image_index].as_path())
+        // {
+        //     Some((_, img)) => img,
+        //     None => {
+        //         // request image to load if was not requrested yeat
+        //         if self
+        //             .requested
+        //             .iter()
+        //             .find(|i| **i == self.image_index)
+        //             .is_none()
+        //         {
+        //             self.image_loader
+        //                 .load(self.images[self.image_index].as_path());
+        //             self.requested.push(self.image_index);
+        //         }
+        //
+        //         return Ok(false);
+        //     }
+        // };
+        //
+        // // trigger to load next image async
+        // let next_index = if self.image_index >= self.images.len() {
+        //     0
+        // } else {
+        //     self.image_index + 1
+        // };
+        //
+        // self.image_loader.load(&self.images[next_index]);
+        // self.requested.push(next_index);
+        //
+        // // load rbga into image
+        // let (width, height) = image_rgb.dimensions();
+        // let image = Image::from_rgba8(ctx, width as u16, height as u16, &image_rgb)?;
+        //
+        // // set properties
+        // self.transition = Some(next_transition(
+        //     self.screen_width,
+        //     self.screen_height,
+        //     image.width() as u32,
+        //     image.height() as u32,
+        // ));
+        // self.current_image = Some(image);
+        // self.change_image = false;
 
         Ok(true)
+    }
+}
+
+#[derive(Clone)]
+struct CycleIndex {
+    index: usize,
+    max: usize,
+}
+
+impl CycleIndex {
+    fn next(&mut self) {
+        if self.index >= self.max {
+            self.index = 0;
+        } else {
+            self.index += 1;
+        }
+    }
+
+    fn previous(&mut self) {
+        if self.index == 0 {
+            self.index = self.max - 1;
+        } else {
+            self.index -= 1;
+        }
     }
 }
 
@@ -239,38 +421,39 @@ impl EventHandler for App {
             if ggez::input::keyboard::is_key_pressed(ctx, KeyCode::Space)
                 || ggez::input::keyboard::is_key_pressed(ctx, KeyCode::Right)
             {
-                println!("loading next image");
-                self.change_image = true;
                 self.ignore_keys_until = total_seconds + 1.0;
+                self.change_image = true;
+                self.desired_index.next();
+                println!("desired image {}", self.desired_index.index);
             }
 
-            // if ggez::input::keyboard::is_key_pressed(ctx, KeyCode::Left) {
-            //     println!("loading previous image");
-            //     self.ignore_keys_until = total_seconds + 1.0;
-            //     if self.image_index > 0 {
-            //         self.image_index -= 1;
-            //     } else {
-            //         self.image_index = self.images.len() - 1;
-            //         let next_image_path = &self.images[self.image_index];
-            //         load_image_async(next_image_path, self.next_image.clone());
-            //     }
-            // }
+            if ggez::input::keyboard::is_key_pressed(ctx, KeyCode::Left) {
+                self.ignore_keys_until = total_seconds + 1.0;
+                self.change_image = true;
+                self.desired_index.previous();
+                println!("desired image {}", self.desired_index.index);
+            }
         }
 
         // timers
         if self.next_switch <= total_seconds {
-            println!("time switch");
+            self.next_switch = total_seconds + SLEEP_SECONDS;
             self.change_image = true;
+            self.desired_index.next();
+            println!("time switch {}", self.desired_index.index);
         }
 
         // update
-        self.transition
-            .iter_mut()
-            .for_each(|i| i.update(total_seconds, delta_seconds));
+        match &mut self.images[self.current_index] {
+            ImageState::Loaded { transition, .. } => {
+                transition.update(total_seconds, delta_seconds);
+            }
+            _ => {}
+        };
 
         if self.change_image {
             if self.try_load_next_image(ctx)? {
-                self.next_switch = total_seconds + SLEEP_SECONDS
+                self.next_switch = total_seconds + SLEEP_SECONDS;
             }
         }
 
@@ -280,20 +463,23 @@ impl EventHandler for App {
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
         graphics::clear(ctx, graphics::BLACK);
 
-        match (&self.current_image, &self.transition) {
-            (Some(img), Some(trans)) => {
-                let pos = trans.pos();
+        match &self.images[self.current_index] {
+            ImageState::Loaded {
+                transition, image, ..
+            } => {
+                let pos = transition.pos();
                 graphics::draw(
                     ctx,
-                    img,
+                    image,
                     graphics::DrawParam::new()
                         .dest(cgmath::Point2::new(pos.0, pos.1))
-                        .rotation(trans.rotation())
-                        .scale(cgmath::Vector2::new(1.0, 1.0) * trans.scale()),
+                        .rotation(transition.rotation())
+                        .scale(cgmath::Vector2::new(1.0, 1.0) * transition.scale()),
                 )?;
             }
             _ => {}
-        }
+        };
+
         graphics::present(ctx)
     }
 }
