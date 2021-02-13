@@ -273,15 +273,24 @@ impl App {
             };
         }
 
-        match &self.images[self.desired_index.index].state {
-            ImageState::Idle => {
-                self.images[self.desired_index.index].state = ImageState::Loading;
-                self.image_loader
-                    .load(self.images[self.desired_index.index].path.as_path());
-                println!("requesting image {}", self.desired_index.index);
-                Ok(false)
+        // load desired and following indexes
+        let mut following_index = self.desired_index.clone();
+        for _ in 0..5 {
+            match &self.images[following_index.index].state {
+                ImageState::Idle => {
+                    self.images[following_index.index].state = ImageState::Loading;
+                    self.image_loader
+                        .load(self.images[following_index.index].path.as_path());
+                    println!("requesting image {}", following_index.index);
+                }
+                _ => {}
             }
-            ImageState::Loading => Ok(false),
+
+            following_index.next();
+        }
+
+        // switch current image if desired one is available
+        match &self.images[self.desired_index.index].state {
             ImageState::Loaded { .. } if self.current_index != self.desired_index.index => {
                 self.current_index = self.desired_index.index;
                 Ok(true)
