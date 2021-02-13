@@ -289,6 +289,19 @@ impl App {
             following_index.next();
         }
 
+        // clean up previous indexes
+        let mut previous_index = self.desired_index.clone();
+        for i in 0..20 {
+            previous_index.previous();
+
+            if i > 10 {
+                if self.images[previous_index.index].state.is_loaded() {
+                    println!("unloading image {}", previous_index.index);
+                    self.images[previous_index.index].state = ImageState::Idle;
+                }
+            }
+        }
+
         // switch current image if desired one is available
         match &self.images[self.desired_index.index].state {
             ImageState::Loaded { .. } if self.current_index != self.desired_index.index => {
