@@ -77,16 +77,16 @@ struct ImageLoader {
     close: Arc<AtomicBool>,
     request_tx: Sender<PathBuf>,
     request_rx: Option<Receiver<PathBuf>>,
-    response_tx: Sender<(PathBuf, RgbaImage)>,
-    response_rx: Receiver<(PathBuf, RgbaImage)>,
+    response_tx: Sender<(PathBuf, Option<RgbaImage>)>,
+    response_rx: Receiver<(PathBuf, Option<RgbaImage>)>,
 }
 
 impl ImageLoader {
     pub fn new() -> Self {
         let (request_tx, request_rx): (Sender<PathBuf>, Receiver<PathBuf>) = mpsc::channel();
         let (response_tx, response_rx): (
-            Sender<(PathBuf, RgbaImage)>,
-            Receiver<(PathBuf, RgbaImage)>,
+            Sender<(PathBuf, Option<RgbaImage>)>,
+            Receiver<(PathBuf, Option<RgbaImage>)>,
         ) = mpsc::channel();
 
         let mut loader = ImageLoader {
@@ -106,7 +106,7 @@ impl ImageLoader {
         self.request_tx.send(path.to_path_buf()).unwrap();
     }
 
-    pub fn take(&mut self) -> Option<(PathBuf, RgbaImage)> {
+    pub fn take(&mut self) -> Option<(PathBuf, Option<RgbaImage>)> {
         self.response_rx.try_recv().ok()
     }
 
@@ -130,7 +130,14 @@ impl ImageLoader {
 
                 let start_trace = Instant::now();
                 let buffer = std::fs::read(&path).expect("fail to load image");
-                let meta = rexiv2::Metadata::new_from_buffer(&buffer).unwrap();
+                let meta = match rexiv2::Metadata::new_from_buffer(&buffer) {
+                    Ok(meta) => meta,
+                    Err(e) => {
+                        println!("fail to read image {:?}: {}", path, e);
+                        response_tx.send((path, None)).unwrap();
+                        continue;
+                    }
+                };
                 let mut dynamic_img = image::load_from_memory(&buffer).unwrap();
                 match meta.get_orientation() {
                     Orientation::Rotate180 => dynamic_img = dynamic_img.rotate180(),
@@ -145,7 +152,7 @@ impl ImageLoader {
                     start_trace.elapsed().as_millis()
                 );
 
-                response_tx.send((path, img)).unwrap();
+                response_tx.send((path, Some(img))).unwrap();
             }
         });
     }
@@ -160,6 +167,7 @@ struct ImageRef {
 enum ImageState {
     Idle,
     Loading,
+    Failed,
     Loaded {
         image: graphics::Image,
         transition: Box<dyn Transition>,
@@ -169,25 +177,29 @@ enum ImageState {
 impl ImageState {
     fn is_loading(&self) -> bool {
         match self {
-            ImageState::Idle { .. } => false,
             ImageState::Loading { .. } => true,
-            ImageState::Loaded { .. } => false,
+            _ => false,
         }
     }
 
     fn is_loaded(&self) -> bool {
         match self {
-            ImageState::Idle { .. } => false,
-            ImageState::Loading { .. } => false,
             ImageState::Loaded { .. } => true,
+            _ => false,
         }
     }
 
     fn is_idle(&self) -> bool {
         match self {
             ImageState::Idle { .. } => true,
-            ImageState::Loading { .. } => false,
-            ImageState::Loaded { .. } => false,
+            _ => false,
+        }
+    }
+
+    fn is_failed(&self) -> bool {
+        match self {
+            ImageState::Failed => true,
+            _ => false,
         }
     }
 }
@@ -201,6 +213,7 @@ struct App {
     screen_height: u32,
     next_switch: f32,
     image_loader: ImageLoader,
+    dir_forward: bool,
 }
 
 impl App {
@@ -223,6 +236,11 @@ impl App {
             })
             .collect();
 
+        println!("image list:");
+        for (i, image) in images.iter().enumerate() {
+            println!("{}: {}", i, image.path.to_string_lossy());
+        }
+
         let loader = ImageLoader::new();
 
         let game = App {
@@ -235,17 +253,18 @@ impl App {
             ignore_keys_until: 0.0,
             screen_width,
             screen_height,
-            next_switch: 0.0,
+            next_switch: SLEEP_SECONDS,
             image_loader: loader,
+            dir_forward: true,
         };
         Ok(game)
     }
 
-    fn try_load_next_image(&mut self, ctx: &mut Context) -> GameResult<bool> {
+    fn load_loaded_images(&mut self, ctx: &mut Context) {
         // load any read image
         loop {
             match self.image_loader.take() {
-                Some((path, image_rgb)) => {
+                Some((path, Some(image_rgb))) => {
                     let index = self
                         .images
                         .iter()
@@ -254,7 +273,8 @@ impl App {
 
                     // load rbga into image
                     let (width, height) = image_rgb.dimensions();
-                    let image = Image::from_rgba8(ctx, width as u16, height as u16, &image_rgb)?;
+                    let image =
+                        Image::from_rgba8(ctx, width as u16, height as u16, &image_rgb).unwrap();
 
                     // set properties
                     let transition = next_transition(
@@ -269,10 +289,18 @@ impl App {
 
                     println!("loaded image {}", index);
                 }
+                Some((path, None)) => {
+                    // remove failed image from the list
+                    println!("broken image, removing it from the list");
+                    self.images.retain(|i| i.path.as_path() != path.as_path());
+                    self.desired_index.max -= 1;
+                }
                 None => break,
             };
         }
+    }
 
+    fn try_load_next_image(&mut self, ctx: &mut Context) -> GameResult<bool> {
         // load desired and following indexes
         let mut following_index = self.desired_index.clone();
         for _ in 0..5 {
@@ -290,14 +318,16 @@ impl App {
         }
 
         // clean up previous indexes
-        let mut previous_index = self.desired_index.clone();
-        for i in 0..20 {
-            previous_index.previous();
+        if self.images.len() > 20 {
+            let mut previous_index = self.desired_index.clone();
+            for i in 0..20 {
+                previous_index.previous();
 
-            if i > 10 {
-                if self.images[previous_index.index].state.is_loaded() {
-                    println!("unloading image {}", previous_index.index);
-                    self.images[previous_index.index].state = ImageState::Idle;
+                if i > 10 {
+                    if self.images[previous_index.index].state.is_loaded() {
+                        println!("unloading image {}", previous_index.index);
+                        self.images[previous_index.index].state = ImageState::Idle;
+                    }
                 }
             }
         }
@@ -307,6 +337,15 @@ impl App {
             ImageState::Loaded { .. } if self.current_index != self.desired_index.index => {
                 self.current_index = self.desired_index.index;
                 Ok(true)
+            }
+            ImageState::Failed if self.current_index != self.desired_index.index => {
+                println!("switch with a failed image?");
+                if self.dir_forward {
+                    self.desired_index.next();
+                } else {
+                    self.desired_index.previous();
+                }
+                Ok(false)
             }
             _ => Ok(false),
         }
@@ -348,12 +387,14 @@ impl EventHandler for App {
             {
                 self.ignore_keys_until = total_seconds + KEY_WAIT;
                 self.desired_index.next();
+                self.dir_forward = true;
                 println!("desired image {}", self.desired_index.index);
             }
 
             if ggez::input::keyboard::is_key_pressed(ctx, KeyCode::Left) {
                 self.ignore_keys_until = total_seconds + KEY_WAIT;
                 self.desired_index.previous();
+                self.dir_forward = false;
                 println!("desired image {}", self.desired_index.index);
             }
         }
@@ -372,6 +413,8 @@ impl EventHandler for App {
             }
             _ => {}
         };
+
+        self.load_loaded_images(ctx);
 
         if self.try_load_next_image(ctx)? {
             self.next_switch = total_seconds + SLEEP_SECONDS;
