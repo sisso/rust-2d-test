@@ -31,7 +31,6 @@ fn main() -> GameResult<()> {
 
     let mut window_mode: WindowMode = Default::default();
     window_mode.resizable = true;
-    window_mode.borderless = true;
     window_mode.width = screen_width as f32;
     window_mode.height = screen_height as f32;
 
@@ -430,7 +429,16 @@ impl EventHandler for App {
         }
     }
 
-    fn resize_event(&mut self, _ctx: &mut Context, _width: f32, _height: f32) {}
+    fn resize_event(&mut self, ctx: &mut Context, width: f32, height: f32) {
+        graphics::set_screen_coordinates(
+            ctx,
+            graphics::Rect::new(0.0, 0.0, width as f32, height as f32),
+        )
+        .unwrap();
+
+        self.screen_width = width as u32;
+        self.screen_height = height as u32;
+    }
 }
 
 fn find_images(path: &Path) -> GameResult<Vec<PathBuf>> {
