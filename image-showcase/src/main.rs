@@ -1,7 +1,7 @@
 use crate::transitions::*;
 use cgmath;
 use ggez::conf::WindowMode;
-use ggez::event::{self, EventHandler, KeyCode};
+use ggez::event::{self, EventHandler, KeyCode, KeyMods};
 use ggez::graphics::Image;
 use ggez::{graphics, Context, ContextBuilder, GameResult};
 use image::RgbaImage;
@@ -31,6 +31,7 @@ fn main() -> GameResult<()> {
 
     let mut window_mode: WindowMode = Default::default();
     window_mode.resizable = true;
+    window_mode.borderless = true;
     window_mode.width = screen_width as f32;
     window_mode.height = screen_height as f32;
 
@@ -208,12 +209,10 @@ struct App {
     current_index: usize,
     desired_index: CycleIndex,
     images: Vec<ImageRef>,
-    ignore_keys_until: f32,
     screen_width: u32,
     screen_height: u32,
     next_switch: f32,
     image_loader: ImageLoader,
-    dir_forward: bool,
 }
 
 impl App {
@@ -250,12 +249,10 @@ impl App {
                 max: images.len(),
             },
             images,
-            ignore_keys_until: 0.0,
             screen_width,
             screen_height,
             next_switch: SLEEP_SECONDS,
             image_loader: loader,
-            dir_forward: true,
         };
         Ok(game)
     }
@@ -338,15 +335,7 @@ impl App {
                 self.current_index = self.desired_index.index;
                 Ok(true)
             }
-            ImageState::Failed if self.current_index != self.desired_index.index => {
-                println!("switch with a failed image?");
-                if self.dir_forward {
-                    self.desired_index.next();
-                } else {
-                    self.desired_index.previous();
-                }
-                Ok(false)
-            }
+            ImageState::Failed if self.current_index != self.desired_index.index => Ok(false),
             _ => Ok(false),
         }
     }
@@ -379,25 +368,6 @@ impl EventHandler for App {
     fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
         let delta_seconds = ggez::timer::delta(ctx).as_secs_f32();
         let total_seconds = ggez::timer::time_since_start(ctx).as_secs_f32();
-
-        // key inputs
-        if total_seconds > self.ignore_keys_until {
-            if ggez::input::keyboard::is_key_pressed(ctx, KeyCode::Space)
-                || ggez::input::keyboard::is_key_pressed(ctx, KeyCode::Right)
-            {
-                self.ignore_keys_until = total_seconds + KEY_WAIT;
-                self.desired_index.next();
-                self.dir_forward = true;
-                println!("desired image {}", self.desired_index.index);
-            }
-
-            if ggez::input::keyboard::is_key_pressed(ctx, KeyCode::Left) {
-                self.ignore_keys_until = total_seconds + KEY_WAIT;
-                self.desired_index.previous();
-                self.dir_forward = false;
-                println!("desired image {}", self.desired_index.index);
-            }
-        }
 
         // timers
         if self.next_switch <= total_seconds {
@@ -445,6 +415,22 @@ impl EventHandler for App {
 
         graphics::present(ctx)
     }
+
+    fn key_up_event(&mut self, _ctx: &mut Context, keycode: KeyCode, _keymods: KeyMods) {
+        match keycode {
+            KeyCode::Space | KeyCode::Right => {
+                self.desired_index.next();
+                println!("desired image {}", self.desired_index.index);
+            }
+            KeyCode::Left => {
+                self.desired_index.previous();
+                println!("desired image {}", self.desired_index.index);
+            }
+            _ => {}
+        }
+    }
+
+    fn resize_event(&mut self, _ctx: &mut Context, _width: f32, _height: f32) {}
 }
 
 fn find_images(path: &Path) -> GameResult<Vec<PathBuf>> {
