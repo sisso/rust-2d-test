@@ -61,16 +61,7 @@ fn main() -> GameResult<()> {
     let mut app = App::new(&mut ctx, screen_width, screen_height, images)?;
 
     // Run!
-    match event::run(&mut ctx, &mut event_loop, &mut app) {
-        Ok(_) => {
-            println!("Exited cleanly.");
-            Ok(())
-        }
-        Err(e) => {
-            println!("Error occured: {}", e);
-            Err(e)
-        }
-    }
+    event::run(ctx, event_loop, app);
 }
 
 struct ImageLoader {
@@ -332,6 +323,11 @@ impl App {
         match &self.images[self.desired_index.index].state {
             ImageState::Loaded { .. } if self.current_index != self.desired_index.index => {
                 self.current_index = self.desired_index.index;
+                println!(
+                    "showing {}: {}",
+                    self.current_index,
+                    self.images[self.current_index].path.to_string_lossy()
+                );
                 Ok(true)
             }
             ImageState::Failed if self.current_index != self.desired_index.index => Ok(false),
@@ -363,7 +359,7 @@ impl CycleIndex {
     }
 }
 
-impl EventHandler for App {
+impl EventHandler<ggez::GameError> for App {
     fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
         let delta_seconds = ggez::timer::delta(ctx).as_secs_f32();
         let total_seconds = ggez::timer::time_since_start(ctx).as_secs_f32();
@@ -393,7 +389,7 @@ impl EventHandler for App {
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
-        graphics::clear(ctx, graphics::BLACK);
+        graphics::clear(ctx, graphics::Color::BLACK);
 
         match &self.images[self.current_index].state {
             ImageState::Loaded {
@@ -444,7 +440,7 @@ impl EventHandler for App {
 fn find_images(path: &Path) -> GameResult<Vec<PathBuf>> {
     let mut files = list_files_at(path)?;
     files.retain(|f| {
-        let file = f.to_string_lossy();
+        let file = f.to_string_lossy().to_lowercase();
         file.ends_with(".png") || file.ends_with(".jpg")
     });
     Ok(files)

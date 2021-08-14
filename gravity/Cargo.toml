@@ -5,7 +5,7 @@ authors = ["sisso <sisso@sisso.com.br>"]
 edition = "2018"
 
 [dependencies]
-ggez = "0.5"
+ggez = "0.6"
 cgmath = { version = "0.17", features = ["mint"]}
 mint = "0.5"
 

@@ -56,7 +56,7 @@ impl App {
                 .with(Model {
                     size: 6.0,
                     pos: Point2::new(0.0, 0.0),
-                    color: graphics::WHITE,
+                    color: graphics::Color::WHITE,
                 })
                 .with(OrbtialBody {
                     mass: 100000.0,
@@ -181,7 +181,7 @@ fn update_models_from_orbits(world: &mut World) {
     }
 }
 
-impl EventHandler for App {
+impl EventHandler<ggez::GameError> for App {
     fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
         let delta = timer::delta(ctx).as_secs_f32();
         if self.world.read_resource::<Cfg>().update_next {
@@ -193,7 +193,7 @@ impl EventHandler for App {
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
-        graphics::clear(ctx, graphics::BLACK);
+        graphics::clear(ctx, graphics::Color::BLACK);
 
         let models = &self.world.read_storage::<Model>();
 
@@ -212,7 +212,11 @@ impl EventHandler for App {
 
         let cfg = &self.world.read_resource::<Cfg>();
         let text = graphics::Text::new(format!("{:?}", cfg.deref()));
-        graphics::draw(ctx, &text, (cgmath::Point2::new(0.0, 0.0), graphics::WHITE))?;
+        graphics::draw(
+            ctx,
+            &text,
+            (cgmath::Point2::new(0.0, 0.0), graphics::Color::WHITE),
+        )?;
 
         graphics::present(ctx)
     }
@@ -241,16 +245,7 @@ fn main() -> GameResult<()> {
     let mut app = App::new(&mut ctx)?;
 
     // Run!
-    match event::run(&mut ctx, &mut event_loop, &mut app) {
-        Ok(_) => {
-            println!("Exited cleanly.");
-            Ok(())
-        }
-        Err(e) => {
-            println!("Error occured: {}", e);
-            Err(e)
-        }
-    }
+    event::run(ctx, event_loop, app);
 }
 
 #[cfg(test)]

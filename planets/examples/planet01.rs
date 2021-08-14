@@ -83,7 +83,7 @@ fn draw_planet(app: &mut App, ctx: &mut Context, pos: P2, radius: f32) -> GameRe
     Ok(())
 }
 
-impl EventHandler for App {
+impl EventHandler<ggez::GameError> for App {
     fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
         if ggez::input::keyboard::is_key_pressed(ctx, KeyCode::Space) {
             self.seed = ggez::timer::ticks(ctx) as f64 / 100.0;
@@ -92,7 +92,7 @@ impl EventHandler for App {
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
-        graphics::clear(ctx, graphics::BLACK);
+        graphics::clear(ctx, graphics::Color::BLACK);
         draw_planet(self, ctx, p2(WIDTH / 2.0, HEIGHT / 2.0), HEIGHT * 0.4);
         graphics::present(ctx)
     }
@@ -119,11 +119,5 @@ fn main() -> GameResult<()> {
     let mut app = App::new(&mut ctx)?;
 
     // Run!
-    match event::run(&mut ctx, &mut event_loop, &mut app) {
-        Ok(_) => Ok(()),
-        Err(e) => {
-            println!("Error occured: {}", e);
-            Err(e)
-        }
-    }
+    event::run(ctx, event_loop, app);
 }

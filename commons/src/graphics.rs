@@ -40,7 +40,7 @@ impl<ID: Copy> GuiButton<ID> {
         let border_y = (self.bounds.h - text.height(ctx) as f32) / 2.0;
         let pos = p2(self.bounds.x + border_x, self.bounds.y + border_y);
 
-        graphics::draw(ctx, &text, (pos, graphics::WHITE))?;
+        graphics::draw(ctx, &text, (pos, graphics::Color::WHITE))?;
 
         Ok(())
     }

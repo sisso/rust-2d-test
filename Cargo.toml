@@ -5,4 +5,6 @@ opt-level = 1
 members = [
     "commons",
     "image-showcase",
+    "gravity",
+    "planets"
 ]
